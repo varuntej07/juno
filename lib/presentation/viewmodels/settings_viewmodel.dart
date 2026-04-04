@@ -1,0 +1,90 @@
+import 'package:flutter/foundation.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/errors/app_exception.dart';
+import '../../core/errors/error_handler.dart';
+import '../../core/logging/app_logger.dart';
+import '../../data/models/user_model.dart';
+import '../../data/services/firestore_service.dart';
+import 'view_state.dart';
+
+export 'view_state.dart';
+
+class SettingsViewModel extends ChangeNotifier {
+  final FirestoreService _firestoreService;
+
+  SettingsViewModel({required FirestoreService firestoreService})
+      : _firestoreService = firestoreService;
+
+  ViewState _state = ViewState.idle;
+  UserModel? _user;
+  AppException? _error;
+
+  ViewState get state => _state;
+  UserModel? get user => _user;
+  UserSettings? get settings => _user?.settings;
+  AppException? get error => _error;
+
+  void _setState(ViewState s) {
+    _state = s;
+    notifyListeners();
+  }
+
+  void loadUser(UserModel user) {
+    _user = user;
+    _setState(ViewState.loaded);
+  }
+
+  Future<void> toggleWakeWord(bool enabled) async {
+    if (_user == null) return;
+    await _updateSettings(_user!.settings.copyWith(wakeWordEnabled: enabled));
+  }
+
+  Future<void> toggleTts(bool enabled) async {
+    if (_user == null) return;
+    await _updateSettings(_user!.settings.copyWith(ttsEnabled: enabled));
+  }
+
+  Future<void> setReminderLeadMinutes(int minutes) async {
+    if (_user == null) return;
+    await _updateSettings(
+      _user!.settings.copyWith(defaultReminderLeadMinutes: minutes),
+    );
+  }
+
+  Future<void> _updateSettings(UserSettings newSettings) async {
+    if (_user == null) return;
+    _setState(ViewState.loading);
+
+    final optimisticUser = _user!.copyWith(settings: newSettings);
+    _user = optimisticUser;
+    notifyListeners();
+
+    try {
+      final result = await _firestoreService.updateDocument(
+        AppConstants.usersCollection,
+        _user!.uid,
+        {'settings': newSettings.toJson()},
+      );
+      result.when(
+        success: (_) {
+          AppLogger.info('Settings updated', tag: 'SettingsVM');
+          _setState(ViewState.loaded);
+        },
+        failure: (error) {
+          _error = error;
+          _setState(ViewState.error);
+          AppLogger.error('Settings update failed', error: error, tag: 'SettingsVM');
+        },
+      );
+    } catch (e, st) {
+      ErrorHandler.handle(e, st);
+      _error = AppException.unexpected(e.toString());
+      _setState(ViewState.error);
+    }
+  }
+
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+}
