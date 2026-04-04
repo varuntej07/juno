@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -106,7 +107,10 @@ class ApiClient {
       AppLogger.network(method, url.toString(), response.statusCode, stopwatch.elapsed);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final bodyText = response.body.trim();
+        final json = bodyText.isEmpty
+            ? <String, dynamic>{}
+            : jsonDecode(bodyText) as Map<String, dynamic>;
         return Result.success(fromJson(json));
       }
 
@@ -120,14 +124,23 @@ class ApiClient {
       return Result.failure(networkEx);
     } on SocketException {
       return Result.failure(AppException.networkUnavailable());
+    } on TimeoutException {
+      return Result.failure(AppException.requestTimeout());
     } on HttpException catch (e) {
       if (attempt < AppConstants.maxApiRetries - 1) {
         await _backoffDelay(attempt);
         return _executeWithRetry(method, path, body, fromJson, attempt + 1);
       }
       return Result.failure(AppException.unexpected(e.message, error: e));
-    } catch (e) {
-      return Result.failure(AppException.requestTimeout());
+    } catch (e, st) {
+      AppLogger.error(
+        'Unexpected API client failure',
+        error: e,
+        stackTrace: st,
+        tag: 'ApiClient',
+        metadata: {'method': method, 'path': path},
+      );
+      return Result.failure(AppException.unexpected(e.toString(), error: e, stackTrace: st));
     }
   }
 

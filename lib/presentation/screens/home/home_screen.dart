@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/theme/app_colors.dart';
+
 import '../../../core/constants/app_constants.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../data/models/chat_message_model.dart';
+import '../../../data/models/voice_models.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/home_viewmodel.dart';
 import '../../widgets/error_display.dart';
@@ -17,8 +20,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   late final AnimationController _pulseController;
@@ -45,6 +47,8 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
+  String get _userId => context.read<AuthViewModel>().user?.uid ?? 'anonymous';
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -57,16 +61,28 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  void _handleSend() {
+  Future<void> _handleSend() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
 
-    final authVm = context.read<AuthViewModel>();
-    final homeVm = context.read<HomeViewModel>();
-    final userId = authVm.user?.uid ?? 'anonymous';
-
     _textController.clear();
-    homeVm.sendMessage(text, userId).then((_) => _scrollToBottom());
+    await context.read<HomeViewModel>().sendMessage(text, _userId);
+    _scrollToBottom();
+  }
+
+  Future<void> _handleMicTap() async {
+    final homeVm = context.read<HomeViewModel>();
+    if (!homeVm.hasActiveVoiceSession) {
+      await homeVm.startVoiceSession(_userId);
+      return;
+    }
+
+    if (homeVm.isVoiceCaptureAvailable && homeVm.micState == MicState.listening) {
+      await homeVm.stopVoiceSession();
+      return;
+    }
+
+    await homeVm.cancelVoiceSession();
   }
 
   @override
@@ -78,18 +94,23 @@ class _HomeScreenState extends State<HomeScreen>
           children: [
             _AppBar(),
             _OfflineBanner(),
+            const _VoiceStatusBanner(),
             Expanded(
               child: Consumer<HomeViewModel>(
                 builder: (context, vm, _) {
-                  if (vm.messages.isEmpty) {
+                  if (vm.messages.isEmpty && vm.streamingAssistantText.isEmpty) {
                     return _EmptyState(
                       pulseAnimation: _pulseAnimation,
                       micState: vm.micState,
-                      onMicTap: () {},
+                      voiceStatus: vm.voiceStatus,
+                      onMicTap: () {
+                        _handleMicTap();
+                      },
                     );
                   }
                   return _MessageList(
                     messages: vm.messages,
+                    streamingAssistantText: vm.streamingAssistantText,
                     scrollController: _scrollController,
                     isLoading: vm.state == ViewState.loading,
                   );
@@ -112,8 +133,12 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             _InputArea(
               controller: _textController,
-              onSend: _handleSend,
-              pulseAnimation: _pulseAnimation,
+              onSend: () {
+                _handleSend();
+              },
+              onMicTap: () {
+                _handleMicTap();
+              },
             ),
           ],
         ),
@@ -196,16 +221,87 @@ class _OfflineBanner extends StatelessWidget {
   }
 }
 
+class _VoiceStatusBanner extends StatelessWidget {
+  const _VoiceStatusBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<HomeViewModel>();
+    if (!vm.hasActiveVoiceSession) return const SizedBox.shrink();
+
+    final title = switch (vm.voiceStatus) {
+      VoiceSessionStatus.connecting => 'Connecting live voice session…',
+      VoiceSessionStatus.ready => 'Live voice session ready',
+      VoiceSessionStatus.listening => 'Listening for live audio…',
+      VoiceSessionStatus.processing => 'Nova Sonic is processing…',
+      VoiceSessionStatus.speaking => 'Nova Sonic is responding…',
+      _ => 'Live voice session active',
+    };
+
+    final subtitle = vm.isVoiceCaptureAvailable
+        ? 'Mic capture is active for this session.'
+        : 'Type into the input field to exercise the live Nova Sonic path.';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: AppColors.textTertiary,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   final Animation<double> pulseAnimation;
   final MicState micState;
+  final VoiceSessionStatus voiceStatus;
   final VoidCallback onMicTap;
 
   const _EmptyState({
     required this.pulseAnimation,
     required this.micState,
+    required this.voiceStatus,
     required this.onMicTap,
   });
+
+  String get _label {
+    if (voiceStatus == VoiceSessionStatus.connecting) {
+      return 'Connecting…';
+    }
+    if (voiceStatus == VoiceSessionStatus.ready) {
+      return 'Live session ready';
+    }
+    return switch (micState) {
+      MicState.idle => 'Tap to start a live Nova Sonic session',
+      MicState.listening => 'Listening…',
+      MicState.processing => 'Processing…',
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -220,11 +316,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            micState == MicState.idle
-                ? 'Tap or say Hey Juno'
-                : micState == MicState.listening
-                    ? 'Listening...'
-                    : 'Processing...',
+            _label,
             style: const TextStyle(
               color: AppColors.textTertiary,
               fontSize: 14,
@@ -314,33 +406,52 @@ class _MicButton extends StatelessWidget {
 }
 
 class _MessageList extends StatelessWidget {
-  final List<ChatMessage> messages;
+  final List<ChatMessageModel> messages;
+  final String streamingAssistantText;
   final ScrollController scrollController;
   final bool isLoading;
 
   const _MessageList({
     required this.messages,
+    required this.streamingAssistantText,
     required this.scrollController,
     required this.isLoading,
   });
 
   @override
   Widget build(BuildContext context) {
+    final draftVisible = streamingAssistantText.trim().isNotEmpty;
+    final totalItems = messages.length + (isLoading ? 1 : 0) + (draftVisible ? 1 : 0);
+
     return ListView.builder(
       controller: scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: messages.length + (isLoading ? 1 : 0),
+      itemCount: totalItems,
       itemBuilder: (context, index) {
-        if (index == messages.length) {
-          return const Padding(
-            padding: EdgeInsets.all(12),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: LoadingIndicator(size: 20),
+        if (index < messages.length) {
+          return JunoResponseBubble(message: messages[index]);
+        }
+
+        final afterMessagesIndex = index - messages.length;
+        if (draftVisible && afterMessagesIndex == 0) {
+          return JunoResponseBubble(
+            message: ChatMessageModel(
+              id: 'draft',
+              text: streamingAssistantText,
+              isUser: false,
+              timestamp: DateTime.now(),
+              channel: ChatMessageChannel.voice,
             ),
           );
         }
-        return JunoResponseBubble(message: messages[index]);
+
+        return const Padding(
+          padding: EdgeInsets.all(12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: LoadingIndicator(size: 20),
+          ),
+        );
       },
     );
   }
@@ -349,18 +460,21 @@ class _MessageList extends StatelessWidget {
 class _InputArea extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onSend;
-  final Animation<double> pulseAnimation;
+  final VoidCallback onMicTap;
 
   const _InputArea({
     required this.controller,
     required this.onSend,
-    required this.pulseAnimation,
+    required this.onMicTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<HomeViewModel>();
     final isLoading = vm.state == ViewState.loading;
+    final hint = vm.hasActiveVoiceSession
+        ? 'Send text into the live Nova Sonic session...'
+        : 'Ask Juno anything...';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -369,9 +483,34 @@ class _InputArea extends StatelessWidget {
       ),
       child: Row(
         children: [
+          GestureDetector(
+            onTap: onMicTap,
+            child: Container(
+              width: 48,
+              height: 48,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: vm.hasActiveVoiceSession
+                    ? AppColors.micProcessing
+                    : AppColors.surface,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: vm.hasActiveVoiceSession
+                      ? AppColors.micProcessing.withValues(alpha: 0.5)
+                      : AppColors.border,
+                ),
+              ),
+              child: Icon(
+                vm.hasActiveVoiceSession ? Icons.stop_rounded : Icons.mic_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+          ),
           Expanded(
             child: JunoTextField(
               controller: controller,
+              hint: hint,
               enabled: !isLoading,
               onSend: onSend,
               onSubmitted: (_) => onSend(),

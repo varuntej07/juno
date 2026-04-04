@@ -11,25 +11,23 @@ import 'di/providers.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await FirebaseConfig.initialize();
+  final firebaseReady = await FirebaseConfig.initialize();
 
   ErrorHandler.init();
   ErrorHandler.setEnvironment(Environment.current.env.name);
 
-  if (!Environment.isDev) {
+  if (firebaseReady && !Environment.isDev) {
     await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
   }
 
   AppLogger.info(
     'Juno starting',
     tag: 'main',
-    metadata: {'env': Environment.current.env.name},
+    metadata: {
+      'env': Environment.current.env.name,
+      'firebase_ready': firebaseReady,
+    },
   );
 
-  runApp(
-    MultiProvider(
-      providers: buildProviders(),
-      child: const JunoApp(),
-    ),
-  );
+  runApp(MultiProvider(providers: buildProviders(), child: const JunoApp()));
 }

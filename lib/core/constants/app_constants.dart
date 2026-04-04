@@ -7,7 +7,7 @@ class AppConstants {
   static const apiWriteTimeout = Duration(seconds: 30);
   static const webSocketPingInterval = Duration(seconds: 15);
   static const webSocketReconnectDelay = Duration(seconds: 3);
-  static const voiceSessionTimeout = Duration(seconds: 30);
+  static const voiceSessionTimeout = Duration(minutes: 8);
   static const silenceDetectionTimeout = Duration(seconds: 3);
 
   // Retries

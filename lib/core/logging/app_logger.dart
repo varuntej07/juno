@@ -1,5 +1,6 @@
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
+import '../config/firebase_runtime.dart';
 
 enum LogLevel { info, warning, error, network }
 
@@ -33,10 +34,13 @@ class AppLogger {
     if (kDebugMode) {
       if (error != null) debugPrint('  Error: $error');
       if (stackTrace != null) debugPrint('  Stack: $stackTrace');
-    } else {
-      if (error != null) {
-        FirebaseCrashlytics.instance.recordError(error, stackTrace, reason: message);
-      }
+    }
+    if (error != null && FirebaseRuntime.hasApp) {
+      FirebaseCrashlytics.instance.recordError(
+        error,
+        stackTrace,
+        reason: message,
+      );
     }
   }
 

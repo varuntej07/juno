@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import '../../core/base/safe_change_notifier.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/errors/error_handler.dart';
 import '../../core/logging/app_logger.dart';
@@ -8,7 +8,7 @@ import 'view_state.dart';
 
 export 'view_state.dart';
 
-class AuthViewModel extends ChangeNotifier {
+class AuthViewModel extends SafeChangeNotifier {
   final AuthRepository _authRepository;
 
   AuthViewModel({required AuthRepository authRepository})
@@ -25,7 +25,7 @@ class AuthViewModel extends ChangeNotifier {
 
   void _setState(ViewState s) {
     _state = s;
-    notifyListeners();
+    safeNotifyListeners();
   }
 
   Future<void> initialize() async {
@@ -104,6 +104,6 @@ class AuthViewModel extends ChangeNotifier {
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    safeNotifyListeners();
   }
 }

@@ -58,4 +58,10 @@ class Environment {
 
   static bool get isDev => _env == Env.dev;
   static bool get isProd => _env == Env.prod;
+
+  static bool get hasConfiguredApi =>
+      !current.apiBaseUrl.contains('PLACEHOLDER_');
+
+  static bool get hasConfiguredVoiceGateway =>
+      !current.wsBaseUrl.contains('PLACEHOLDER_');
 }

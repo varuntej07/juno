@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import '../../core/base/safe_change_notifier.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/errors/error_handler.dart';
@@ -9,7 +9,7 @@ import 'view_state.dart';
 
 export 'view_state.dart';
 
-class SettingsViewModel extends ChangeNotifier {
+class SettingsViewModel extends SafeChangeNotifier {
   final FirestoreService _firestoreService;
 
   SettingsViewModel({required FirestoreService firestoreService})
@@ -26,7 +26,7 @@ class SettingsViewModel extends ChangeNotifier {
 
   void _setState(ViewState s) {
     _state = s;
-    notifyListeners();
+    safeNotifyListeners();
   }
 
   void loadUser(UserModel user) {
@@ -57,7 +57,7 @@ class SettingsViewModel extends ChangeNotifier {
 
     final optimisticUser = _user!.copyWith(settings: newSettings);
     _user = optimisticUser;
-    notifyListeners();
+    safeNotifyListeners();
 
     try {
       final result = await _firestoreService.updateDocument(
@@ -85,6 +85,6 @@ class SettingsViewModel extends ChangeNotifier {
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    safeNotifyListeners();
   }
 }

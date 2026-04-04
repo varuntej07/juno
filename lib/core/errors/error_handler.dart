@@ -1,5 +1,6 @@
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
+import '../config/firebase_runtime.dart';
 import '../logging/app_logger.dart';
 import 'app_exception.dart';
 
@@ -14,7 +15,9 @@ class ErrorHandler {
         stackTrace: details.stack,
         tag: 'ErrorHandler',
       );
-      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+      _withCrashlytics((crashlytics) {
+        crashlytics.recordFlutterFatalError(details);
+      });
     };
 
     PlatformDispatcher.instance.onError = (error, stack) {
@@ -24,7 +27,9 @@ class ErrorHandler {
         stackTrace: stack,
         tag: 'ErrorHandler',
       );
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      _withCrashlytics((crashlytics) {
+        crashlytics.recordError(error, stack, fatal: true);
+      });
       return true;
     };
   }
@@ -37,23 +42,42 @@ class ErrorHandler {
       tag: 'ErrorHandler',
     );
     if (!kDebugMode) {
-      FirebaseCrashlytics.instance.recordError(error, stack);
+      _withCrashlytics((crashlytics) {
+        crashlytics.recordError(error, stack);
+      });
     }
   }
 
   static void setUser(String userId) {
-    FirebaseCrashlytics.instance.setUserIdentifier(userId);
+    _withCrashlytics((crashlytics) {
+      crashlytics.setUserIdentifier(userId);
+    });
   }
 
   static void setEnvironment(String env) {
-    FirebaseCrashlytics.instance.setCustomKey('environment', env);
+    _withCrashlytics((crashlytics) {
+      crashlytics.setCustomKey('environment', env);
+    });
   }
 
   static void logBreadcrumb(String action, {Map<String, dynamic>? metadata}) {
-    AppLogger.info('Breadcrumb: $action', tag: 'ErrorHandler', metadata: metadata);
+    AppLogger.info(
+      'Breadcrumb: $action',
+      tag: 'ErrorHandler',
+      metadata: metadata,
+    );
     if (!kDebugMode) {
-      FirebaseCrashlytics.instance.log('$action ${metadata ?? ''}');
+      _withCrashlytics((crashlytics) {
+        crashlytics.log('$action ${metadata ?? ''}');
+      });
     }
+  }
+
+  static void _withCrashlytics(
+    void Function(FirebaseCrashlytics crashlytics) callback,
+  ) {
+    if (!FirebaseRuntime.hasApp) return;
+    callback(FirebaseCrashlytics.instance);
   }
 
   static String userMessage(AppException e) {
