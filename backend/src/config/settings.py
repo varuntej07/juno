@@ -1,5 +1,15 @@
+import os
+
+from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Load .env into os.environ FIRST — before pydantic-settings instantiates and
+# before Firebase / AWS SDK initialise. override=True means .env wins over
+# any stale system-level env vars (e.g. a system ENV=production you may have
+# set previously). Safe to call multiple times; subsequent calls are no-ops.
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"),
+            override=True)
 
 
 class Settings(BaseSettings):

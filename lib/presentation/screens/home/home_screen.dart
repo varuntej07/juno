@@ -480,6 +480,7 @@ class _InputArea extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = context.watch<HomeViewModel>();
     final isLoading = vm.state == ViewState.loading;
+    final micDisabled = isLoading && !vm.hasActiveVoiceSession;
     final hint = vm.hasActiveVoiceSession
         ? 'Send text into the live Nova Sonic session...'
         : 'Ask Juno anything...';
@@ -492,26 +493,29 @@ class _InputArea extends StatelessWidget {
       child: Row(
         children: [
           GestureDetector(
-            onTap: onMicTap,
-            child: Container(
-              width: 48,
-              height: 48,
-              margin: const EdgeInsets.only(right: 12),
-              decoration: BoxDecoration(
-                color: vm.hasActiveVoiceSession
-                    ? AppColors.micProcessing
-                    : AppColors.surface,
-                shape: BoxShape.circle,
-                border: Border.all(
+            onTap: micDisabled ? null : onMicTap,
+            child: Opacity(
+              opacity: micDisabled ? 0.4 : 1.0,
+              child: Container(
+                width: 48,
+                height: 48,
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
                   color: vm.hasActiveVoiceSession
-                      ? AppColors.micProcessing.withValues(alpha: 0.5)
-                      : AppColors.border,
+                      ? AppColors.micProcessing
+                      : AppColors.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: vm.hasActiveVoiceSession
+                        ? AppColors.micProcessing.withValues(alpha: 0.5)
+                        : AppColors.border,
+                  ),
                 ),
-              ),
-              child: Icon(
-                vm.hasActiveVoiceSession ? Icons.stop_rounded : Icons.mic_rounded,
-                color: Colors.white,
-                size: 22,
+                child: Icon(
+                  vm.hasActiveVoiceSession ? Icons.stop_rounded : Icons.mic_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
             ),
           ),

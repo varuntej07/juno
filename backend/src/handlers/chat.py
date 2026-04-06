@@ -6,6 +6,7 @@ Lambda-compatible response shape.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from ..config.settings import settings
@@ -34,6 +35,8 @@ def _resolve_user_id(event: dict[str, Any], body: dict[str, Any]) -> str | None:
 
 
 async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
+    start_ts = time.monotonic()
+
     try:
         body: dict[str, Any] = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
@@ -41,27 +44,37 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
 
     user_id = _resolve_user_id(event, body)
     if not user_id:
+        logger.warn("Chat: rejected — missing user_id")
         return _json(401, {"error": "Unauthorized: user_id required"})
 
     message = str(body.get("message", "")).strip()
     if not message:
+        logger.warn("Chat: rejected — empty message", {"user_id": user_id})
         return _json(400, {"error": "message is required"})
+
+    logger.info("Chat: request received", {
+        "user_id": user_id,
+        "message_len": len(message),
+        "message_preview": message[:80],
+    })
 
     try:
         tool_executor = ToolExecutor(user_id)
         claude = ClaudeClient(tool_executor)
 
-        # Build context-aware system prompt
-        context = await tool_executor.execute("get_user_context", {})
-        system_prompt = (
-            f"{settings.JUNO_DEFAULT_SYSTEM_PROMPT}\n\n"
-            f"User context:\n{json.dumps(context, indent=2)}"
-        )
-
         result = await claude.send_text_turn(
-            system_prompt=system_prompt,
+            system_prompt=settings.JUNO_DEFAULT_SYSTEM_PROMPT,
             user_text=message,
         )
+
+        duration_ms = int((time.monotonic() - start_ts) * 1000)
+        logger.info("Chat: request completed", {
+            "user_id": user_id,
+            "duration_ms": duration_ms,
+            "response_len": len(result["text"]),
+            "tools_used": result["tool_names"],
+            "response_preview": result["text"][:100],
+        })
 
         return _json(200, {
             "text": result["text"],
@@ -70,5 +83,11 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
         })
 
     except Exception as exc:
-        logger.error("Chat request failed", {"error": str(exc), "user_id": user_id})
+        duration_ms = int((time.monotonic() - start_ts) * 1000)
+        logger.exception("Chat: request failed", {
+            "user_id": user_id,
+            "duration_ms": duration_ms,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        })
         return _json(500, {"error": "Internal server error"})

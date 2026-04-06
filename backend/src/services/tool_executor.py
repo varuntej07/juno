@@ -55,8 +55,32 @@ class ToolExecutor:
         }
         handler = dispatch.get(tool_name)
         if handler is None:
+            logger.warn("Tool: unknown tool requested", {"tool": tool_name, "user_id": self._user_id})
             return {"error": f"Unknown tool: {tool_name}"}
-        return await handler(input_data)
+
+        import time as _time
+        _start = _time.monotonic()
+        logger.debug(f"Tool: executing {tool_name}", {
+            "user_id": self._user_id,
+            "input_keys": list(input_data.keys()),
+        })
+        try:
+            result = await handler(input_data)
+            _ms = int((_time.monotonic() - _start) * 1000)
+            logger.info(f"Tool: {tool_name} OK", {
+                "user_id": self._user_id,
+                "duration_ms": _ms,
+                "result_keys": list(result.keys()) if isinstance(result, dict) else "non-dict",
+            })
+            return result
+        except Exception as exc:
+            _ms = int((_time.monotonic() - _start) * 1000)
+            logger.exception(f"Tool: {tool_name} FAILED", {
+                "user_id": self._user_id,
+                "duration_ms": _ms,
+                "error": str(exc),
+            })
+            raise
 
     # ─── Reminders ───────────────────────────────────────────────────────────
 

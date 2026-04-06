@@ -3,7 +3,7 @@ class AppConstants {
 
   // Timeouts
   static const apiConnectTimeout = Duration(seconds: 10);
-  static const apiReadTimeout = Duration(seconds: 30);
+  static const apiReadTimeout = Duration(seconds: 60);
   static const apiWriteTimeout = Duration(seconds: 30);
   static const webSocketPingInterval = Duration(seconds: 15);
   static const webSocketReconnectDelay = Duration(seconds: 3);

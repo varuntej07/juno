@@ -1,33 +1,46 @@
 """
 SonicRealtimeSession — bidirectional voice streaming with AWS Bedrock Nova Sonic.
 
-Threading model:
+Architecture:
   asyncio event loop
+      │
       │  _input_queue (asyncio.Queue) ← fed by WebSocket message handlers
       │
-      ▼ _bridge_task (asyncio coroutine)
-  threading.Queue (_sync_queue)  ← consumed by boto3 sync generator
+      ▼  _send_loop (asyncio Task)
+  stream.input_stream.send()  →  Nova Sonic
       │
-      ▼  boto3 thread (ThreadPoolExecutor)
-  invoke_model_with_bidirectional_stream → Nova Sonic
+      ▼  _recv_loop (asyncio Task)
+  stream.output_stream (async iterator)
       │
-      ▼ response events put back via run_coroutine_threadsafe
-  asyncio event loop → send() to Flutter WebSocket
+      ▼  _handle_event (coroutine)
+  send() callback → Flutter WebSocket
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import queue as sync_queue_mod
-import threading
+import time
 from base64 import b64decode, b64encode
 from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
-import boto3
-from botocore.config import Config
+from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient
+from aws_sdk_bedrock_runtime.config import Config as BedrockConfig
+from aws_sdk_bedrock_runtime.models import (
+    BidirectionalInputPayloadPart,
+    InvokeModelWithBidirectionalStreamInputChunk,
+    InvokeModelWithBidirectionalStreamOperationInput,
+    InvokeModelWithBidirectionalStreamOutputChunk,
+    InvokeModelWithBidirectionalStreamOutputInternalServerException,
+    InvokeModelWithBidirectionalStreamOutputModelStreamErrorException,
+    InvokeModelWithBidirectionalStreamOutputModelTimeoutException,
+    InvokeModelWithBidirectionalStreamOutputServiceUnavailableException,
+    InvokeModelWithBidirectionalStreamOutputThrottlingException,
+    InvokeModelWithBidirectionalStreamOutputValidationException,
+)
+from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
 
 from ..config.settings import settings
 from ..lib.logger import logger
@@ -47,6 +60,16 @@ from ..shared.tools import sonic_tool_configuration
 from .tool_executor import ToolExecutor
 
 SendFn = Callable[[ServerMessage], None]
+
+# Error event types that map to raised RuntimeErrors
+_BEDROCK_STREAM_ERRORS = (
+    InvokeModelWithBidirectionalStreamOutputInternalServerException,
+    InvokeModelWithBidirectionalStreamOutputModelStreamErrorException,
+    InvokeModelWithBidirectionalStreamOutputValidationException,
+    InvokeModelWithBidirectionalStreamOutputThrottlingException,
+    InvokeModelWithBidirectionalStreamOutputModelTimeoutException,
+    InvokeModelWithBidirectionalStreamOutputServiceUnavailableException,
+)
 
 
 class SonicRealtimeSession:
@@ -69,27 +92,25 @@ class SonicRealtimeSession:
         self._send = send
         self._tool_executor = tool_executor
 
-        # Async ↔ sync bridges
-        self._loop = asyncio.get_event_loop()
+        # Unified outbound queue — fed by all public methods
         self._input_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
-        self._sync_queue: sync_queue_mod.Queue[bytes | None] = sync_queue_mod.Queue()
 
         # State
         self._accumulated_text: list[str] = []
         self._ended_input = False
         self._cancelled = False
-        self._processing_task: asyncio.Task[None] | None = None
 
-        # boto3 client (created fresh per session to avoid sharing state across threads)
-        self._bedrock = boto3.client(
-            "bedrock-runtime",
-            region_name=settings.AWS_REGION,
-            config=Config(
-                read_timeout=300,
-                connect_timeout=10,
-                retries={"max_attempts": 0},
-            ),
-        )
+        # Background tasks
+        self._send_task: asyncio.Task[None] | None = None
+        self._recv_task: asyncio.Task[None] | None = None
+        self._stream = None
+
+        # Counters for observability
+        self._audio_chunks_in = 0
+        self._audio_chunks_out = 0
+        self._text_deltas_out = 0
+        self._tool_calls = 0
+        self._stream_events = 0
 
     @property
     def id(self) -> str:
@@ -98,15 +119,41 @@ class SonicRealtimeSession:
     # ─── Public interface (called from WebSocket handler) ────────────────────
 
     async def start(self) -> None:
-        """Kick off the Nova Sonic session. Non-blocking — processing runs in background."""
+        """Open the Nova Sonic stream and start background send/recv tasks."""
+        logger.info("Sonic: starting session", {
+            "session_id": self._session_id,
+            "user_id": self._user_id,
+            "voice_id": self._voice_id,
+            "model": settings.BEDROCK_SONIC_MODEL_ID,
+            "region": settings.AWS_REGION,
+        })
+
+        config = BedrockConfig(
+            endpoint_uri=f"https://bedrock-runtime.{settings.AWS_REGION}.amazonaws.com",
+            region=settings.AWS_REGION,
+            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
+        )
+        client = BedrockRuntimeClient(config=config)
+
+        logger.info("Sonic: invoking Bedrock bidirectional stream", {
+            "session_id": self._session_id,
+            "model": settings.BEDROCK_SONIC_MODEL_ID,
+            "region": settings.AWS_REGION,
+        })
+        self._stream = await client.invoke_model_with_bidirectional_stream(
+            InvokeModelWithBidirectionalStreamOperationInput(
+                model_id=settings.BEDROCK_SONIC_MODEL_ID
+            )
+        )
+
+        # Pre-fill queue with session setup events before tasks start
         self._enqueue_start_events()
 
-        # Bridge: drain asyncio queue → sync queue so boto3 generator can consume it
-        asyncio.create_task(self._bridge_to_sync(), name=f"bridge-{self._session_id}")
-
-        # Launch boto3 session in thread pool
-        self._processing_task = asyncio.create_task(
-            self._run_in_thread(), name=f"sonic-{self._session_id}"
+        self._send_task = asyncio.create_task(
+            self._send_loop(), name=f"sonic-send-{self._session_id}"
+        )
+        self._recv_task = asyncio.create_task(
+            self._recv_loop(), name=f"sonic-recv-{self._session_id}"
         )
 
         self._send(SessionReadyMsg(sessionId=self._session_id))
@@ -118,6 +165,7 @@ class SonicRealtimeSession:
     def send_audio_chunk(self, audio_base64: str) -> None:
         if self._ended_input or self._cancelled:
             return
+        self._audio_chunks_in += 1
         self._input_queue.put_nowait({
             "event": {
                 "audioInput": {
@@ -131,6 +179,11 @@ class SonicRealtimeSession:
     def send_text_input(self, text: str) -> None:
         if self._ended_input or self._cancelled:
             return
+        logger.info("Sonic: queuing text input", {
+            "session_id": self._session_id,
+            "text_len": len(text),
+            "text_preview": text[:80],
+        })
         content_name = f"text-{uuid4()}"
         self._input_queue.put_nowait({
             "event": {
@@ -200,6 +253,10 @@ class SonicRealtimeSession:
         if self._ended_input or self._cancelled:
             return
         self._ended_input = True
+        logger.info("Sonic: end_input — signalling processing state", {
+            "session_id": self._session_id,
+            "audio_chunks_sent": self._audio_chunks_in,
+        })
         self._send(SessionStateMsg(
             sessionId=self._session_id,
             payload={"state": "processing"},
@@ -216,16 +273,27 @@ class SonicRealtimeSession:
         self._input_queue.put_nowait({
             "event": {"sessionEnd": {}}
         })
-        self._input_queue.put_nowait(None)  # sentinel → close sync queue
+        self._input_queue.put_nowait(None)  # sentinel → close input stream
 
     async def cancel(self) -> None:
+        logger.info("Sonic: cancelling session", {
+            "session_id": self._session_id,
+            "stream_events_processed": self._stream_events,
+        })
         self._cancelled = True
-        self._input_queue.put_nowait(None)
-        if self._processing_task and not self._processing_task.done():
-            self._processing_task.cancel()
+        self._input_queue.put_nowait(None)  # unblock _send_loop if waiting
+
+        tasks = [t for t in (self._send_task, self._recv_task) if t]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        if self._stream is not None:
             try:
-                await self._processing_task
-            except (asyncio.CancelledError, Exception):
+                await self._stream.close()
+            except Exception:
                 pass
 
     # ─── Session init events ─────────────────────────────────────────────────
@@ -302,88 +370,120 @@ class SonicRealtimeSession:
             }}
         })
 
-    # ─── Async → sync bridge ─────────────────────────────────────────────────
+    # ─── Background tasks ────────────────────────────────────────────────────
 
-    async def _bridge_to_sync(self) -> None:
-        """Drain the asyncio input queue into the threading.Queue for boto3."""
-        while True:
-            item = await self._input_queue.get()
-            if item is None:
-                self._sync_queue.put(None)  # sentinel
-                break
-            payload_bytes = json.dumps(item).encode()
-            self._sync_queue.put(payload_bytes)
-
-    def _sync_input_generator(self):
-        """Synchronous generator consumed by boto3 inside the worker thread."""
-        while True:
-            item = self._sync_queue.get()
-            if item is None:
-                return
-            yield {"chunk": {"bytes": item}}
-
-    # ─── Thread worker ───────────────────────────────────────────────────────
-
-    async def _run_in_thread(self) -> None:
-        """Run the blocking boto3 session in a thread pool executor."""
-        loop = asyncio.get_running_loop()
+    async def _send_loop(self) -> None:
+        """Drain _input_queue and forward each event to Nova Sonic's input stream."""
         try:
-            await loop.run_in_executor(None, self._blocking_session, loop)
+            while True:
+                item = await self._input_queue.get()
+                if item is None:
+                    await self._stream.input_stream.close()
+                    break
+                payload_bytes = json.dumps(item).encode()
+                event = InvokeModelWithBidirectionalStreamInputChunk(
+                    value=BidirectionalInputPayloadPart(bytes_=payload_bytes)
+                )
+                await self._stream.input_stream.send(event)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             if not self._cancelled:
-                logger.error("Sonic session thread error", {"error": str(exc), "session": self._session_id})
-                self._send(ErrorMsg(sessionId=self._session_id, message=str(exc)))
+                logger.exception("Sonic: send loop error", {
+                    "session_id": self._session_id,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                })
+
+    async def _recv_loop(self) -> None:
+        """Consume Nova Sonic's output stream and dispatch events."""
+        start_ts = time.monotonic()
+        try:
+            _, output_stream = await self._stream.await_output()
+
+            async for output_event in output_stream:
+                if self._cancelled:
+                    break
+                self._stream_events += 1
+
+                # Surface Bedrock-level stream errors as exceptions
+                if isinstance(output_event, _BEDROCK_STREAM_ERRORS):
+                    err_type = type(output_event).__name__
+                    msg = getattr(output_event.value, "message", str(output_event.value))
+                    logger.error("Sonic: Bedrock stream error event", {
+                        "session_id": self._session_id,
+                        "error_type": err_type,
+                        "message": msg,
+                    })
+                    raise RuntimeError(f"{err_type}: {msg}")
+
+                if not isinstance(output_event, InvokeModelWithBidirectionalStreamOutputChunk):
+                    continue
+
+                raw = output_event.value.bytes_
+                if not raw:
+                    continue
+
+                try:
+                    event_data: dict[str, Any] = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    logger.warn("Sonic: failed to parse stream event JSON", {
+                        "session_id": self._session_id,
+                        "error": str(exc),
+                        "raw_preview": raw[:100],
+                    })
+                    continue
+
+                await self._handle_event(event_data)
+
+            duration_ms = int((time.monotonic() - start_ts) * 1000)
+            logger.info("Sonic: session completed", {
+                "session_id": self._session_id,
+                "duration_ms": duration_ms,
+                "stream_events": self._stream_events,
+                "audio_chunks_in": self._audio_chunks_in,
+                "audio_chunks_out": self._audio_chunks_out,
+                "text_deltas_out": self._text_deltas_out,
+                "tool_calls": self._tool_calls,
+            })
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            duration_ms = int((time.monotonic() - start_ts) * 1000)
+            if not self._cancelled:
+                logger.exception("Sonic: session error", {
+                    "session_id": self._session_id,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "duration_ms": duration_ms,
+                })
+                self._send(ErrorMsg(
+                    sessionId=self._session_id,
+                    message=f"[{type(exc).__name__}] {exc}",
+                ))
         finally:
             final_text = " ".join(self._accumulated_text).strip()
             if final_text:
+                logger.info("Sonic: sending final text", {
+                    "session_id": self._session_id,
+                    "text_len": len(final_text),
+                    "text_preview": final_text[:100],
+                })
                 self._send(AssistantTextFinalMsg(
                     sessionId=self._session_id,
                     text=final_text,
                 ))
             self._send(SessionEndedMsg(sessionId=self._session_id))
 
-    def _blocking_session(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Runs entirely in a worker thread. Sends events back via run_coroutine_threadsafe."""
-        response = self._bedrock.invoke_model_with_bidirectional_stream(
-            modelId=settings.BEDROCK_SONIC_MODEL_ID,
-            body=self._sync_input_generator(),
-        )
-
-        for raw_event in response.get("body", []):
-            if self._cancelled:
-                break
-            self._handle_stream_event(raw_event, loop)
-
-    def _handle_stream_event(
-        self,
-        raw_event: dict[str, Any],
-        loop: asyncio.AbstractEventLoop,
-    ) -> None:
-        """Parse a single Nova Sonic stream event and forward to Flutter."""
-        # Check for error events first
-        for err_key in (
-            "validationException",
-            "modelStreamErrorException",
-            "internalServerException",
-            "throttlingException",
-            "serviceUnavailableException",
-            "modelTimeoutException",
-        ):
-            if err_key in raw_event:
-                msg = raw_event[err_key].get("message", f"Bedrock error: {err_key}")
-                raise RuntimeError(msg)
-
-        chunk = raw_event.get("chunk", {})
-        raw_bytes = chunk.get("bytes", b"")
-        if not raw_bytes:
-            return
-
-        try:
-            event_data: dict[str, Any] = json.loads(raw_bytes)
-        except json.JSONDecodeError:
-            return
-
+    async def _handle_event(self, event_data: dict[str, Any]) -> None:
+        """Parse a single Nova Sonic event and forward to Flutter."""
         event = event_data.get("event", {})
+        event_keys = list(event.keys())
+        logger.debug(f"Sonic: stream event {event_keys}", {
+            "session_id": self._session_id,
+            "event_num": self._stream_events,
+        })
 
         # Text output
         if "textOutput" in event:
@@ -392,26 +492,31 @@ class SonicRealtimeSession:
                 text = text_event.get("content", "")
                 if text:
                     self._accumulated_text.append(text)
-                    self._thread_send(AssistantTextDeltaMsg(
+                    self._text_deltas_out += 1
+                    logger.debug("Sonic: → textOutput delta", {
+                        "session_id": self._session_id,
+                        "text_preview": text[:60],
+                    })
+                    self._send(AssistantTextDeltaMsg(
                         sessionId=self._session_id,
                         text=text,
-                    ), loop)
-                    self._thread_send(SessionStateMsg(
+                    ))
+                    self._send(SessionStateMsg(
                         sessionId=self._session_id,
                         payload={"state": "speaking"},
-                    ), loop)
+                    ))
 
         # Audio output
         elif "audioOutput" in event:
-            audio_event = event["audioOutput"]
-            audio_content = audio_event.get("content", "")
+            audio_content = event["audioOutput"].get("content", "")
             if audio_content:
-                self._thread_send(AssistantAudioChunkMsg(
+                self._audio_chunks_out += 1
+                self._send(AssistantAudioChunkMsg(
                     sessionId=self._session_id,
                     audioBase64=audio_content,
                     mimeType="audio/lpcm",
                     sampleRateHertz=settings.VOICE_GATEWAY_SAMPLE_RATE_HZ,
-                ), loop)
+                ))
 
         # Tool use
         elif "toolUse" in event:
@@ -420,37 +525,55 @@ class SonicRealtimeSession:
             content_raw = tool_event.get("content", "{}")
             content_id = tool_event.get("contentId", "")
 
+            self._tool_calls += 1
+            logger.info("Sonic: tool call received", {
+                "session_id": self._session_id,
+                "tool_name": tool_name,
+                "content_id": content_id,
+            })
+
             try:
                 tool_input = json.loads(content_raw) if isinstance(content_raw, str) else content_raw
             except json.JSONDecodeError:
                 tool_input = {"raw": content_raw}
 
-            self._thread_send(ToolCallMsg(
+            self._send(ToolCallMsg(
                 sessionId=self._session_id,
                 toolName=tool_name,
                 payload=tool_input,
-            ), loop)
+            ))
 
-            # Execute tool synchronously from the thread (bridged back to asyncio)
+            tool_start = time.monotonic()
             try:
-                future = asyncio.run_coroutine_threadsafe(
+                result = await asyncio.wait_for(
                     self._tool_executor.execute(tool_name, tool_input),
-                    loop,
+                    timeout=30.0,
                 )
-                result = future.result(timeout=30)
+                tool_ms = int((time.monotonic() - tool_start) * 1000)
+                logger.info("Sonic: tool call completed", {
+                    "session_id": self._session_id,
+                    "tool_name": tool_name,
+                    "duration_ms": tool_ms,
+                })
             except Exception as exc:
-                logger.error("Tool error in Sonic session", {"tool": tool_name, "error": str(exc)})
+                tool_ms = int((time.monotonic() - tool_start) * 1000)
+                logger.exception("Sonic: tool execution error", {
+                    "session_id": self._session_id,
+                    "tool_name": tool_name,
+                    "error": str(exc),
+                    "duration_ms": tool_ms,
+                })
                 result = {"error": str(exc)}
 
-            self._thread_send(ToolResultMsg(
+            self._send(ToolResultMsg(
                 sessionId=self._session_id,
                 toolName=tool_name,
                 payload=result,
-            ), loop)
+            ))
 
-            # Feed tool result back into Nova Sonic stream
+            # Feed tool result back into Nova Sonic via the unified input queue
             result_content_name = f"tool-result-{content_id}"
-            self._sync_queue.put(json.dumps({
+            self._input_queue.put_nowait({
                 "event": {"contentStart": {
                     "promptName": self._prompt_name,
                     "contentName": result_content_name,
@@ -463,30 +586,24 @@ class SonicRealtimeSession:
                         "toolName": tool_name,
                     },
                 }}
-            }).encode())
-            self._sync_queue.put(json.dumps({
+            })
+            self._input_queue.put_nowait({
                 "event": {"toolResult": {
                     "promptName": self._prompt_name,
                     "contentName": result_content_name,
                     "content": json.dumps(result),
                 }}
-            }).encode())
-            self._sync_queue.put(json.dumps({
+            })
+            self._input_queue.put_nowait({
                 "event": {"contentEnd": {
                     "promptName": self._prompt_name,
                     "contentName": result_content_name,
                 }}
-            }).encode())
+            })
 
-        # Completion
+        # Completion end
         elif "completionEnd" in event:
-            return  # _run_in_thread finalises after the loop
-
-    def _thread_send(self, message: ServerMessage, loop: asyncio.AbstractEventLoop) -> None:
-        """Thread-safe: schedule a WebSocket send back on the asyncio loop."""
-        asyncio.run_coroutine_threadsafe(
-            self._async_send(message), loop
-        )
-
-    async def _async_send(self, message: ServerMessage) -> None:
-        self._send(message)
+            logger.info("Sonic: completionEnd received", {
+                "session_id": self._session_id,
+                "accumulated_text_len": sum(len(t) for t in self._accumulated_text),
+            })

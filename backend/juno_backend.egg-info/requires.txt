@@ -1,0 +1,17 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.11
+pydantic-settings>=2.7
+python-dotenv>=1.0
+aws-sdk-bedrock-runtime
+smithy-aws-core
+anthropic>=0.52
+firebase-admin>=6.7
+google-api-python-client>=2.168
+google-auth>=2.40
+google-auth-httplib2>=0.2
+mangum>=0.19
+
+[dev]
+ruff>=0.9
+pyright>=1.1

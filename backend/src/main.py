@@ -18,9 +18,15 @@ Lambda (REST handlers only):
 
 from __future__ import annotations
 
+import json
+import os
+import time
+import uuid
+
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse
 from mangum import Mangum
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config.settings import settings
 from .handlers.chat import handle_chat_request
@@ -31,6 +37,51 @@ from .lib.logger import logger
 from .voice_gateway.ws_handler import voice_stream_handler
 
 app = FastAPI(title="Juno Backend", version="1.0.0")
+
+
+# ─── Request / Response logging middleware ────────────────────────────────────
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = str(uuid.uuid4())[:8]
+        start = time.monotonic()
+
+        # Skip noisy health checks
+        if request.url.path != "/health":
+            logger.info("→ HTTP request", {
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+            })
+
+        try:
+            response = await call_next(request)
+            if request.url.path != "/health":
+                duration_ms = int((time.monotonic() - start) * 1000)
+                level_fn = logger.error if response.status_code >= 500 else (
+                    logger.warn if response.status_code >= 400 else logger.info
+                )
+                level_fn("← HTTP response", {
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "duration_ms": duration_ms,
+                })
+            return response
+        except Exception as exc:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.exception("← HTTP unhandled exception", {
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "duration_ms": duration_ms,
+                "error": str(exc),
+            })
+            raise
+
+
+app.add_middleware(RequestLoggingMiddleware)
 
 
 # ─── Health ──────────────────────────────────────────────────────────────────
@@ -68,13 +119,26 @@ def _to_lambda_event(request: Request, body: bytes) -> dict:
     }
 
 
+def _lambda_response(result: dict) -> JSONResponse:
+    """
+    Lambda-style handlers return {"statusCode": int, "body": str}.
+    result["body"] is already a JSON string — parse it back to a dict so
+    JSONResponse doesn't double-encode it into a JSON-wrapped string.
+    """
+    body_str = result.get("body", "{}")
+    try:
+        body_dict = json.loads(body_str) if isinstance(body_str, str) else body_str
+    except (json.JSONDecodeError, TypeError):
+        body_dict = {"raw": body_str}
+    return JSONResponse(content=body_dict, status_code=result.get("statusCode", 500))
+
+
 @app.post("/chat")
 async def chat_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
     event = _to_lambda_event(request, body)
     result = await handle_chat_request(event)
-    return JSONResponse(content=result["body"], status_code=result["statusCode"],
-                        media_type="application/json")
+    return _lambda_response(result)
 
 
 @app.post("/nutrition/analyze")
@@ -82,8 +146,7 @@ async def nutrition_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
     event = _to_lambda_event(request, body)
     result = await handle_nutrition_analyze_request(event)
-    return JSONResponse(content=result["body"], status_code=result["statusCode"],
-                        media_type="application/json")
+    return _lambda_response(result)
 
 
 @app.post("/notification-reply")
@@ -91,26 +154,52 @@ async def notification_reply_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
     event = _to_lambda_event(request, body)
     result = await handle_notification_reply_request(event)
-    return JSONResponse(content=result["body"], status_code=result["statusCode"],
-                        media_type="application/json")
+    return _lambda_response(result)
 
 
 @app.post("/scheduler/tick")
 async def scheduler_tick_endpoint() -> JSONResponse:
     result = await handle_scheduler_tick()
-    return JSONResponse(content=result["body"], status_code=result["statusCode"],
-                        media_type="application/json")
+    return _lambda_response(result)
 
 
-# ─── Startup / shutdown ───────────────────────────────────────────────────────
+# ─── Startup ─────────────────────────────────────────────────────────────────
+
+def _check_env() -> None:
+    """Log the status of every critical env var so you can spot missing config instantly."""
+    checks = {
+        "ANTHROPIC_API_KEY": bool(settings.ANTHROPIC_API_KEY),
+        "AWS_REGION": bool(settings.AWS_REGION),
+        "BEDROCK_MODEL": settings.BEDROCK_SONIC_MODEL_ID,
+        "GOOGLE_CALENDAR": settings.google_calendar_configured,
+        "ENV": settings.ENV,
+    }
+
+    # AWS credential sources (precedence order)
+    aws_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+    aws_role = os.environ.get("AWS_ROLE_ARN", "")
+    aws_profile = os.environ.get("AWS_PROFILE", "")
+    if aws_key:
+        checks["AWS_CREDS"] = f"env key ...{aws_key[-4:]}"
+    elif aws_role:
+        checks["AWS_CREDS"] = f"role {aws_role}"
+    elif aws_profile:
+        checks["AWS_CREDS"] = f"profile {aws_profile}"
+    else:
+        checks["AWS_CREDS"] = "default chain (~/.aws)"
+
+    logger.info("Juno backend starting", checks)
+
+    # Warn on missing critical keys
+    if not settings.ANTHROPIC_API_KEY:
+        logger.warn("ANTHROPIC_API_KEY is not set — /chat will fail")
+    if not aws_key and not aws_role and not aws_profile:
+        logger.warn("No explicit AWS credentials found — Bedrock will use ~/.aws/credentials or IAM role")
+
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    logger.info("Juno backend starting", {
-        "env": settings.ENV,
-        "host": settings.VOICE_GATEWAY_HOST,
-        "port": settings.VOICE_GATEWAY_PORT,
-    })
+    _check_env()
 
 
 # ─── Lambda adapter ───────────────────────────────────────────────────────────

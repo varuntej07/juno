@@ -2,10 +2,22 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import '../config/firebase_runtime.dart';
 
-enum LogLevel { info, warning, error, network }
+enum LogLevel { debug, info, warning, error, network }
 
 class AppLogger {
   AppLogger._();
+
+  // Minimum level to print. In release builds you may raise this to warning.
+  // For now, always print everything so issues are visible during development.
+  static const LogLevel _minLevel = LogLevel.debug;
+
+  static void debug(
+    String message, {
+    String? tag,
+    Map<String, dynamic>? metadata,
+  }) {
+    _log(LogLevel.debug, message, tag: tag, metadata: metadata);
+  }
 
   static void info(
     String message, {
@@ -31,10 +43,8 @@ class AppLogger {
     Map<String, dynamic>? metadata,
   }) {
     _log(LogLevel.error, message, tag: tag, metadata: metadata);
-    if (kDebugMode) {
-      if (error != null) debugPrint('  Error: $error');
-      if (stackTrace != null) debugPrint('  Stack: $stackTrace');
-    }
+    if (error != null) debugPrint('  └─ Error: $error');
+    if (stackTrace != null) debugPrint('  └─ Stack: $stackTrace');
     if (error != null && FirebaseRuntime.hasApp) {
       FirebaseCrashlytics.instance.recordError(
         error,
@@ -63,15 +73,21 @@ class AppLogger {
     String? tag,
     Map<String, dynamic>? metadata,
   }) {
-    if (!kDebugMode) return;
+    if (level.index < _minLevel.index) return;
 
     final timestamp = DateTime.now().toIso8601String();
-    final tagStr = tag != null ? '[$tag]' : '';
-    final levelStr = '[${level.name.toUpperCase()}]';
+    final tagStr = tag != null ? '[$tag] ' : '';
+    final levelStr = switch (level) {
+      LogLevel.debug   => 'DEBUG',
+      LogLevel.info    => 'INFO ',
+      LogLevel.warning => 'WARN ',
+      LogLevel.error   => 'ERROR',
+      LogLevel.network => 'NET  ',
+    };
     final metaStr = metadata != null && metadata.isNotEmpty
-        ? ' | ${metadata.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
+        ? '  | ${metadata.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
         : '';
 
-    debugPrint('$timestamp $levelStr$tagStr $message$metaStr');
+    debugPrint('$timestamp  $levelStr  $tagStr$message$metaStr');
   }
 }

@@ -47,17 +47,25 @@ async def _resolve_user_id(ws: WebSocket) -> str | None:
         token = auth_header[7:]
         try:
             decoded = admin_auth().verify_id_token(token)
-            return decoded["uid"]
+            uid = decoded["uid"]
+            logger.info("WS auth: Firebase token verified", {"user_id": uid})
+            return uid
         except Exception as exc:
-            logger.warn("Firebase token verification failed", {"error": str(exc)})
+            logger.error("WS auth: Firebase token verification failed", {
+                "error": type(exc).__name__,
+                "detail": str(exc),
+            })
             return None
 
     if not settings.is_production:
         fallback = ws.headers.get("x-juno-user-id", "")
         if fallback:
-            logger.warn("Using dev fallback user id", {"user_id": fallback})
+            logger.warn("WS auth: using dev fallback x-juno-user-id header", {"user_id": fallback})
             return fallback
+        logger.warn("WS auth: no Authorization header and no x-juno-user-id — rejecting")
+        return None
 
+    logger.error("WS auth: no Authorization header in production — rejecting")
     return None
 
 
@@ -77,6 +85,12 @@ def _make_send(ws: WebSocket):
 
 
 async def voice_stream_handler(ws: WebSocket) -> None:
+    client_ip = ws.client.host if ws.client else "unknown"
+    logger.info("WS: new connection attempt", {
+        "client_ip": client_ip,
+        "path": str(ws.url),
+    })
+
     await ws.accept()
 
     user_id = await _resolve_user_id(ws)
@@ -85,20 +99,28 @@ async def voice_stream_handler(ws: WebSocket) -> None:
             ErrorMsg(message="Unauthorized: valid Firebase ID token required.").model_dump_json()
         )
         await ws.close(code=1008)
+        logger.warn("WS: connection rejected — unauthorized", {"client_ip": client_ip})
         return
 
-    logger.info("Voice gateway client connected", {"user_id": user_id})
+    logger.info("WS: client connected", {"user_id": user_id, "client_ip": client_ip})
     ctx = ConnectionContext(user_id=user_id)
     send = _make_send(ws)
+    msg_count = 0
 
     try:
         while True:
             raw = await ws.receive_text()
+            msg_count += 1
 
             try:
                 data = json.loads(raw)
                 msg = _client_message_adapter.validate_python(data)
             except (json.JSONDecodeError, ValidationError) as exc:
+                logger.warn("WS: invalid message received", {
+                    "user_id": user_id,
+                    "error": str(exc),
+                    "raw_preview": raw[:120],
+                })
                 await ws.send_text(
                     ErrorMsg(
                         sessionId=ctx.session.id if ctx.session else None,
@@ -107,9 +129,20 @@ async def voice_stream_handler(ws: WebSocket) -> None:
                 )
                 continue
 
-            match msg.type:
+            msg_type = msg.type
+            logger.debug(f"WS: ← {msg_type}", {
+                "user_id": user_id,
+                "session_id": ctx.session.id if ctx.session else None,
+                "msg_count": msg_count,
+            })
+
+            match msg_type:
                 case "session.start":
                     if ctx.session is not None:
+                        logger.warn("WS: session.start received but session already active", {
+                            "user_id": user_id,
+                            "session_id": ctx.session.id,
+                        })
                         await ws.send_text(
                             ErrorMsg(
                                 sessionId=ctx.session.id,
@@ -118,6 +151,11 @@ async def voice_stream_handler(ws: WebSocket) -> None:
                         )
                         continue
 
+                    logger.info("WS: starting new voice session", {
+                        "user_id": user_id,
+                        "voice_id": getattr(msg.payload, "voiceId", None),
+                        "has_system_prompt": bool(getattr(msg.payload, "systemPrompt", None)),
+                    })
                     tool_executor = ToolExecutor(user_id)
                     ctx.session = SonicRealtimeSession(
                         user_id=user_id,
@@ -127,24 +165,45 @@ async def voice_stream_handler(ws: WebSocket) -> None:
                         tool_executor=tool_executor,
                     )
                     await ctx.session.start()
+                    logger.info("WS: voice session started", {
+                        "user_id": user_id,
+                        "session_id": ctx.session.id,
+                    })
 
                 case "input.audio":
                     if ctx.session:
                         ctx.session.send_audio_chunk(msg.payload.audioBase64)
 
                 case "input.text":
+                    text_preview = (msg.payload.text or "")[:60]
+                    logger.info("WS: text input received", {
+                        "user_id": user_id,
+                        "session_id": ctx.session.id if ctx.session else None,
+                        "text_preview": text_preview,
+                        "text_len": len(msg.payload.text or ""),
+                    })
                     if ctx.session:
                         ctx.session.send_text_input(msg.payload.text)
+                    else:
+                        logger.warn("WS: input.text received but no active session", {"user_id": user_id})
 
                 case "input.ocr_context":
                     if ctx.session:
                         ctx.session.send_ocr_context(msg.payload.text)
 
                 case "input.end":
+                    logger.info("WS: input.end — signalling end of input", {
+                        "user_id": user_id,
+                        "session_id": ctx.session.id if ctx.session else None,
+                    })
                     if ctx.session:
                         ctx.session.end_input()
 
                 case "session.cancel":
+                    logger.info("WS: session.cancel received", {
+                        "user_id": user_id,
+                        "session_id": ctx.session.id if ctx.session else None,
+                    })
                     if ctx.session:
                         await ctx.session.cancel()
                         ctx.session = None
@@ -154,10 +213,20 @@ async def voice_stream_handler(ws: WebSocket) -> None:
                     session_id = ctx.session.id if ctx.session else "unbound"
                     await ws.send_text(PongMsg(sessionId=session_id).model_dump_json())
 
-    except WebSocketDisconnect:
-        logger.info("Voice gateway client disconnected", {"user_id": user_id})
+    except WebSocketDisconnect as exc:
+        logger.info("WS: client disconnected", {
+            "user_id": user_id,
+            "code": exc.code,
+            "reason": exc.reason or "none",
+            "messages_received": msg_count,
+        })
     except Exception as exc:
-        logger.error("Voice gateway error", {"user_id": user_id, "error": str(exc)})
+        logger.exception("WS: unhandled exception in message loop", {
+            "user_id": user_id,
+            "session_id": ctx.session.id if ctx.session else None,
+            "error": str(exc),
+            "messages_received": msg_count,
+        })
         try:
             await ws.send_text(
                 ErrorMsg(
@@ -169,4 +238,8 @@ async def voice_stream_handler(ws: WebSocket) -> None:
             pass
     finally:
         if ctx.session:
+            logger.info("WS: cancelling active session on disconnect", {
+                "user_id": user_id,
+                "session_id": ctx.session.id,
+            })
             await ctx.session.cancel()
