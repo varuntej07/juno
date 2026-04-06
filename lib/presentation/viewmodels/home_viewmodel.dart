@@ -12,6 +12,7 @@ import '../../data/services/lambda_api_service.dart';
 import '../../data/services/voice_capture_service.dart';
 import '../../data/services/voice_playback_service.dart';
 import '../../data/services/voice_session_service.dart';
+import '../../data/services/wake_word_service.dart';
 import '../../core/network/connectivity_service.dart';
 import 'view_state.dart';
 
@@ -25,6 +26,7 @@ class HomeViewModel extends SafeChangeNotifier {
   final VoiceSessionService _voiceSessionService;
   final VoiceCaptureService _voiceCaptureService;
   final VoicePlaybackService _voicePlaybackService;
+  final WakeWordService _wakeWordService;
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<ConnectivityStatus>? _connectivitySubscription;
@@ -45,11 +47,13 @@ class HomeViewModel extends SafeChangeNotifier {
     required VoiceSessionService voiceSessionService,
     required VoiceCaptureService voiceCaptureService,
     required VoicePlaybackService voicePlaybackService,
+    required WakeWordService wakeWordService,
   })  : _lambdaService = lambdaService,
         _connectivityService = connectivityService,
         _voiceSessionService = voiceSessionService,
         _voiceCaptureService = voiceCaptureService,
-        _voicePlaybackService = voicePlaybackService {
+        _voicePlaybackService = voicePlaybackService,
+        _wakeWordService = wakeWordService {
     _connectivitySubscription = _connectivityService.statusStream.listen(
       (status) {
         _isOffline = status == ConnectivityStatus.disconnected;
@@ -82,6 +86,17 @@ class HomeViewModel extends SafeChangeNotifier {
   void _setState(ViewState nextState) {
     _state = nextState;
     safeNotifyListeners();
+  }
+
+  /// Start wake word detection. Call this once after the user is authenticated.
+  /// When the wake word fires, it automatically starts a voice session.
+  Future<void> initWakeWord(String userId) async {
+    await _wakeWordService.start(() => startVoiceSession(userId));
+    AppLogger.info(
+      'Wake word detection active',
+      tag: 'HomeViewModel',
+      metadata: {'userId': userId},
+    );
   }
 
   Future<void> startVoiceSession(String userId) async {
@@ -360,6 +375,7 @@ class HomeViewModel extends SafeChangeNotifier {
   void dispose() {
     _connectivitySubscription?.cancel();
     _voiceEventsSubscription?.cancel();
+    unawaited(_wakeWordService.stop());
     unawaited(_voiceSessionService.dispose());
     super.dispose();
   }

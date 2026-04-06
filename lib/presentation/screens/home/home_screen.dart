@@ -37,6 +37,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    // Start wake word detection after the first frame so context is ready.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final uid = context.read<AuthViewModel>().user?.uid;
+      if (uid != null && uid.isNotEmpty) {
+        context.read<HomeViewModel>().initWakeWord(uid);
+      }
+    });
   }
 
   @override

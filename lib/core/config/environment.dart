@@ -1,3 +1,5 @@
+import 'dev_targets.dart';
+
 enum Env { dev, staging, prod }
 
 class EnvironmentConfig {
@@ -35,22 +37,25 @@ class Environment {
       case Env.prod:
         return const EnvironmentConfig(
           env: Env.prod,
-          apiBaseUrl: 'https://PLACEHOLDER_PROD.execute-api.us-east-1.amazonaws.com/prod',
-          wsBaseUrl: 'wss://PLACEHOLDER_PROD.execute-api.us-east-1.amazonaws.com/prod',
+          // TODO: replace with your domain once purchased
+          apiBaseUrl: 'https://api.juno-app.com',
+          wsBaseUrl: 'wss://api.juno-app.com',
           firebaseProjectId: 'juno-prod',
         );
       case Env.staging:
         return const EnvironmentConfig(
           env: Env.staging,
-          apiBaseUrl: 'https://PLACEHOLDER_STAGING.execute-api.us-east-1.amazonaws.com/staging',
-          wsBaseUrl: 'wss://PLACEHOLDER_STAGING.execute-api.us-east-1.amazonaws.com/staging',
+          apiBaseUrl: 'https://staging.api.juno-app.com',
+          wsBaseUrl: 'wss://staging.api.juno-app.com',
           firebaseProjectId: 'juno-staging',
         );
       case Env.dev:
-        return const EnvironmentConfig(
+        // Controlled by lib/core/config/dev_targets.dart
+        // Flip isPhysicalDeviceTest / isEmulatorTest there to switch targets
+        return EnvironmentConfig(
           env: Env.dev,
-          apiBaseUrl: 'https://PLACEHOLDER_DEV.execute-api.us-east-1.amazonaws.com/dev',
-          wsBaseUrl: 'wss://PLACEHOLDER_DEV.execute-api.us-east-1.amazonaws.com/dev',
+          apiBaseUrl: DevTargets.devApiBaseUrl,
+          wsBaseUrl: DevTargets.devWsBaseUrl,
           firebaseProjectId: 'juno-dev',
         );
     }

@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import '../../firebase_options.dart';
 import '../logging/app_logger.dart';
 import 'firebase_runtime.dart';
 
@@ -13,7 +14,9 @@ class FirebaseConfig {
     }
 
     try {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
       _lastInitializationError = null;
       AppLogger.info('Firebase initialized', tag: 'FirebaseConfig');
       return true;

@@ -34,6 +34,12 @@ dependencies:
   intl: ^0.20.2
   shared_preferences: ^2.5.3
 
+  # Audio — real-time PCM recording + streaming playback
+  flutter_sound: ^9.15.11
+
+  # Runtime permissions (microphone)
+  permission_handler: ^11.4.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -41,3 +47,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # Drop your "Hey Juno" .ppn file here from Picovoice Console.
+    # Placeholder: using built-in keyword until custom model is added.
+    - assets/wake_word/

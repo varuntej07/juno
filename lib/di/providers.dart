@@ -13,6 +13,7 @@ import '../data/services/lambda_api_service.dart';
 import '../data/services/voice_capture_service.dart';
 import '../data/services/voice_playback_service.dart';
 import '../data/services/voice_session_service.dart';
+import '../data/services/wake_word_service.dart';
 import '../presentation/viewmodels/auth_viewmodel.dart';
 import '../presentation/viewmodels/home_viewmodel.dart';
 import '../presentation/viewmodels/settings_viewmodel.dart';
@@ -32,8 +33,11 @@ List<SingleChildWidget> buildProviders() {
   final voiceSessionService = VoiceSessionService(
     tokenProvider: firebaseAuthService.getIdToken,
   );
-  final voiceCaptureService = NoopVoiceCaptureService();
-  final voicePlaybackService = NoopVoicePlaybackService();
+
+  // Real audio services — PCM streaming via flutter_sound
+  final voiceCaptureService = FlutterSoundCaptureService();
+  final voicePlaybackService = FlutterSoundPlaybackService();
+  final wakeWordService = WakeWordService();
 
   final authRepository = AuthRepository(
     authService: firebaseAuthService,
@@ -51,6 +55,7 @@ List<SingleChildWidget> buildProviders() {
     Provider<VoiceSessionService>.value(value: voiceSessionService),
     Provider<VoiceCaptureService>.value(value: voiceCaptureService),
     Provider<VoicePlaybackService>.value(value: voicePlaybackService),
+    Provider<WakeWordService>.value(value: wakeWordService),
     Provider<AuthRepository>.value(value: authRepository),
     Provider<MemoryRepository>.value(value: memoryRepository),
     Provider<ReminderRepository>.value(value: reminderRepository),
@@ -64,6 +69,7 @@ List<SingleChildWidget> buildProviders() {
         voiceSessionService: voiceSessionService,
         voiceCaptureService: voiceCaptureService,
         voicePlaybackService: voicePlaybackService,
+        wakeWordService: wakeWordService,
       ),
     ),
     ChangeNotifierProvider<SettingsViewModel>(
