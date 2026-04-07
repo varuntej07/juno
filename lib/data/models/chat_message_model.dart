@@ -7,13 +7,64 @@ class ChatMessageModel {
   final DateTime timestamp;
   final ChatMessageChannel channel;
 
+  /// Null until the message is persisted to a SQLite session.
+  final String? sessionId;
+
   const ChatMessageModel({
     required this.id,
     required this.text,
     required this.isUser,
     required this.timestamp,
     required this.channel,
+    this.sessionId,
   });
+
+  // ── Serialisation ─────────────────────────────────────────────────────────
+
+  factory ChatMessageModel.fromMap(Map<String, dynamic> map) {
+    return ChatMessageModel(
+      id: map['id'] as String,
+      text: map['text'] as String,
+      isUser: map['is_user'] as bool,
+      timestamp: DateTime.parse(map['timestamp'] as String),
+      channel: ChatMessageChannel.values.firstWhere(
+        (c) => c.name == map['channel'],
+        orElse: () => ChatMessageChannel.text,
+      ),
+      sessionId: map['session_id'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'text': text,
+        'is_user': isUser,
+        'timestamp': timestamp.toUtc().toIso8601String(),
+        'channel': channel.name,
+        if (sessionId != null) 'session_id': sessionId,
+      };
+
+  /// Serialises to the `{role, content}` shape expected by the Claude /chat
+  /// history parameter. Voice and text messages are both treated as plain
+  /// conversational turns.
+  Map<String, String> toHistoryTurn() => {
+        'role': isUser ? 'user' : 'assistant',
+        'content': text,
+      };
+
+  // ── Value equality ────────────────────────────────────────────────────────
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChatMessageModel &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  // ── copyWith ──────────────────────────────────────────────────────────────
 
   ChatMessageModel copyWith({
     String? id,
@@ -21,6 +72,7 @@ class ChatMessageModel {
     bool? isUser,
     DateTime? timestamp,
     ChatMessageChannel? channel,
+    String? sessionId,
   }) {
     return ChatMessageModel(
       id: id ?? this.id,
@@ -28,6 +80,11 @@ class ChatMessageModel {
       isUser: isUser ?? this.isUser,
       timestamp: timestamp ?? this.timestamp,
       channel: channel ?? this.channel,
+      sessionId: sessionId ?? this.sessionId,
     );
   }
+
+  @override
+  String toString() =>
+      'ChatMessageModel(id: $id, isUser: $isUser, channel: ${channel.name})';
 }

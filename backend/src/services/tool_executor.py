@@ -14,6 +14,7 @@ from google.cloud import firestore as fs
 
 from ..lib.logger import logger
 from .firebase import admin_firestore, admin_messaging
+from .google_calendar_connector import GoogleCalendarConnector
 
 ToolResult = dict[str, Any]
 
@@ -151,9 +152,11 @@ class ToolExecutor:
         if not title or not start_time:
             raise ValueError("title and start_time are required")
 
-        cal = self._get_calendar_client()
-        if cal is None:
+        connector = GoogleCalendarConnector(self._user_id)
+        status = connector.get_status()
+        if not status.get("enabled"):
             return {"configured": False, "message": "Google Calendar is not configured."}
+        cal = connector.calendar_client()
 
         end_time = inp.get("end_time")
         if not end_time:
@@ -171,6 +174,7 @@ class ToolExecutor:
             body["location"] = inp["location"]
 
         event = cal.events().insert(calendarId="primary", body=body).execute()
+        connector.cache_api_events([event])
         return {
             "configured": True,
             "event_id": event.get("id"),
@@ -179,62 +183,14 @@ class ToolExecutor:
         }
 
     async def _get_upcoming_events(self, inp: dict[str, Any]) -> ToolResult:
-        hours_ahead = int(inp.get("hours_ahead", 24))
-        cal = self._get_calendar_client()
-        if cal is None:
-            return {"configured": False, "events": []}
-
-        now = datetime.now(timezone.utc)
-        time_max = (now + timedelta(hours=hours_ahead)).isoformat()
-
-        result = (
-            cal.events()
-            .list(
-                calendarId="primary",
-                timeMin=now.isoformat(),
-                timeMax=time_max,
-                singleEvents=True,
-                orderBy="startTime",
-                maxResults=20,
-            )
-            .execute()
+        connector = GoogleCalendarConnector(self._user_id)
+        return connector.query_events(
+            range_name=str(inp.get("range", "")).strip() or None,
+            start_time=str(inp.get("start_time", "")).strip() or None,
+            end_time=str(inp.get("end_time", "")).strip() or None,
+            limit=int(inp.get("limit", 10) or 10),
+            hours_ahead=int(inp.get("hours_ahead", 24) or 24),
         )
-
-        events = [
-            {
-                "id": e.get("id"),
-                "title": e.get("summary"),
-                "start_time": e.get("start", {}).get("dateTime") or e.get("start", {}).get("date"),
-                "end_time": e.get("end", {}).get("dateTime") or e.get("end", {}).get("date"),
-                "location": e.get("location"),
-            }
-            for e in result.get("items", [])
-        ]
-        return {"configured": True, "events": events}
-
-    def _get_calendar_client(self) -> Any | None:
-        from ..config.settings import settings
-
-        if not settings.google_calendar_configured:
-            return None
-
-        from google.oauth2.credentials import Credentials
-        from googleapiclient.discovery import build
-
-        doc = self._user_ref().collection("integrations").document("google_calendar").get()
-        if not doc.exists:
-            return None
-
-        data = doc.to_dict() or {}
-        creds = Credentials(
-            token=data.get("access_token"),
-            refresh_token=data.get("refresh_token"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=settings.GOOGLE_CLIENT_ID,
-            client_secret=settings.GOOGLE_CLIENT_SECRET,
-            expiry=datetime.fromisoformat(data["expiry_date"]) if data.get("expiry_date") else None,
-        )
-        return build("calendar", "v3", credentials=creds, cache_discovery=False)
 
     # ─── Memory ───────────────────────────────────────────────────────────────
 

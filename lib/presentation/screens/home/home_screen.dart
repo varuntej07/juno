@@ -1,8 +1,10 @@
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../data/local/app_database.dart';
 import '../../../data/models/chat_message_model.dart';
 import '../../../data/models/voice_models.dart';
 import '../../viewmodels/auth_viewmodel.dart';
@@ -11,6 +13,7 @@ import '../../widgets/error_display.dart';
 import '../../widgets/juno_response_bubble.dart';
 import '../../widgets/juno_text_field.dart';
 import '../../widgets/loading_indicator.dart';
+import '../connectors/connectors_screen.dart';
 import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,6 +24,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   late final AnimationController _pulseController;
@@ -38,11 +42,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Start wake word detection after the first frame so context is ready.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Restore chat history and start wake word after the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final homeVm = context.read<HomeViewModel>();
+      // Load last session's messages before any network calls.
+      await homeVm.initSession();
       final uid = context.read<AuthViewModel>().user?.uid;
       if (uid != null && uid.isNotEmpty) {
-        context.read<HomeViewModel>().initWakeWord(uid);
+        await homeVm.initWakeWord(uid);
       }
     });
   }
@@ -93,14 +100,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     await homeVm.cancelVoiceSession();
   }
 
+  Future<void> _openSettings() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
+  }
+
+  Future<void> _openConnectors() async {
+    Navigator.of(context).pop();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ConnectorsScreen()),
+    );
+  }
+
+  Future<void> _handleNewChat() async {
+    Navigator.of(context).pop();
+    await context.read<HomeViewModel>().createNewChat();
+  }
+
+  Future<void> _handleSelectSession(String sessionId) async {
+    Navigator.of(context).pop();
+    await context.read<HomeViewModel>().switchSession(sessionId);
+    _scrollToBottom();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: Consumer2<HomeViewModel, AuthViewModel>(
+        builder: (context, homeVm, authVm, _) {
+          return _HomeDrawer(
+            userName: authVm.user?.displayName ?? 'User',
+            userEmail: authVm.user?.email ?? '',
+            sessions: homeVm.sessions,
+            currentSessionId: homeVm.currentSessionId,
+            onOpenConnectors: _openConnectors,
+            onNewChat: _handleNewChat,
+            onSelectSession: _handleSelectSession,
+          );
+        },
+      ),
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            _AppBar(),
+            _AppBar(
+              onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
+              onSettingsTap: _openSettings,
+            ),
             _OfflineBanner(),
             const _VoiceStatusBanner(),
             Expanded(
@@ -156,38 +206,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 }
 
 class _AppBar extends StatelessWidget {
+  final VoidCallback onMenuTap;
+  final VoidCallback onSettingsTap;
+
+  const _AppBar({
+    required this.onMenuTap,
+    required this.onSettingsTap,
+  });
+
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthViewModel>().user;
-    final initial = user?.displayName.isNotEmpty == true
-        ? user!.displayName[0].toUpperCase()
-        : '?';
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+          InkWell(
+            onTap: onMenuTap,
+            borderRadius: BorderRadius.circular(12),
             child: Container(
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
               ),
-              child: Center(
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    color: AppColors.accent,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              child: const Icon(
+                Icons.menu_rounded,
+                color: AppColors.textPrimary,
+                size: 22,
               ),
             ),
           ),
@@ -203,15 +250,22 @@ class _AppBar extends StatelessWidget {
               ),
             ),
           ),
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-            child: const Icon(
-              Icons.settings_outlined,
-              color: AppColors.textSecondary,
-              size: 22,
+          InkWell(
+            onTap: onSettingsTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Icon(
+                Icons.settings_outlined,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
             ),
           ),
         ],
@@ -462,6 +516,169 @@ class _MessageList extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _HomeDrawer extends StatelessWidget {
+  final String userName;
+  final String userEmail;
+  final List<ChatSession> sessions;
+  final String? currentSessionId;
+  final VoidCallback onOpenConnectors;
+  final VoidCallback onNewChat;
+  final void Function(String sessionId) onSelectSession;
+
+  const _HomeDrawer({
+    required this.userName,
+    required this.userEmail,
+    required this.sessions,
+    required this.currentSessionId,
+    required this.onOpenConnectors,
+    required this.onNewChat,
+    required this.onSelectSession,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: AppColors.surface,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.person_rounded,
+                      color: AppColors.accent,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          userName,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (userEmail.isNotEmpty)
+                          Text(
+                            userEmail,
+                            style: const TextStyle(
+                              color: AppColors.textTertiary,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: AppColors.divider, height: 1),
+            ListTile(
+              leading: const Icon(Icons.add_rounded, color: AppColors.accent),
+              title: const Text(
+                'New Chat',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              ),
+              onTap: onNewChat,
+            ),
+            ListTile(
+              leading: const Icon(Icons.cable_rounded, color: AppColors.textSecondary),
+              title: const Text(
+                'Connectors',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              ),
+              onTap: onOpenConnectors,
+            ),
+            const Divider(color: AppColors.divider, height: 1),
+            if (sessions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Recent Chats',
+                    style: const TextStyle(
+                      color: AppColors.textTertiary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: sessions.length,
+                itemBuilder: (context, index) {
+                  final session = sessions[index];
+                  final isSelected = session.id == currentSessionId;
+                  final label = session.title?.isNotEmpty == true
+                      ? session.title!
+                      : 'Chat ${index + 1}';
+                  return ListTile(
+                    selected: isSelected,
+                    selectedTileColor: AppColors.accent.withValues(alpha: 0.08),
+                    leading: Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: isSelected ? AppColors.accent : AppColors.textTertiary,
+                      size: 18,
+                    ),
+                    title: Text(
+                      label,
+                      style: TextStyle(
+                        color: isSelected ? AppColors.accent : AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      _formatDate(session.startedAt),
+                      style: const TextStyle(
+                        color: AppColors.textTertiary,
+                        fontSize: 11,
+                      ),
+                    ),
+                    onTap: () => onSelectSession(session.id),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) return 'Today';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    return '${dt.month}/${dt.day}/${dt.year}';
   }
 }
 

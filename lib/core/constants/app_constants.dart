@@ -19,6 +19,10 @@ class AppConstants {
   static const micButtonSize = 72.0;
   static const maxResponseHistoryItems = 50;
 
+  // Chat history window sent to backend for multi-turn context.
+  // 10 messages ≈ 1k tokens — tunable without touching other code.
+  static const chatHistoryWindow = 10;
+
   // Firestore collections
   static const memoriesCollection = 'memories';
   static const remindersCollection = 'reminders';

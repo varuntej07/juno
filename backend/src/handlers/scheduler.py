@@ -12,6 +12,7 @@ from firebase_admin import messaging
 
 from ..lib.logger import logger
 from ..services.firebase import admin_messaging
+from ..services.google_calendar_connector import GoogleCalendarConnector
 from ..services.tool_executor import fetch_due_reminders, list_user_fcm_tokens, mark_reminder_fired
 
 
@@ -56,6 +57,9 @@ def _send_reminder_notification(
 
 async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
+        renewed_channels = GoogleCalendarConnector.renew_expiring_channels(limit=10)
+        synced_calendars = GoogleCalendarConnector.process_pending_sync_jobs(limit=20)
+
         due = fetch_due_reminders()
         delivered = 0
 
@@ -80,7 +84,12 @@ async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str
                     "error": str(exc),
                 })
 
-        return _json(200, {"scanned": len(due), "delivered": delivered})
+        return _json(200, {
+            "scanned": len(due),
+            "delivered": delivered,
+            "calendar_syncs": synced_calendars,
+            "renewed_calendar_channels": renewed_channels,
+        })
 
     except Exception as exc:
         logger.error("Scheduler tick failed", {"error": str(exc)})

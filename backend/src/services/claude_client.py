@@ -35,14 +35,30 @@ class ClaudeClient:
         *,
         system_prompt: str,
         user_text: str,
+        history: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """
         Run a full multi-turn Claude conversation until a text response
         with no tool calls is produced (or max turns exceeded).
-        Returns {"text": str, "tool_names": list[str]}.
+
+        Args:
+            history: Optional list of prior turns [{role, content}] to prepend
+                     before the current user_text. Enables multi-turn context
+                     across HTTP requests. Must alternate user/assistant roles
+                     and end before the current user turn.
+
+        Returns:
+            {"text": str, "tool_names": list[str]}
         """
         tools = [t for t in claude_tool_definitions() if t["name"] not in _CHAT_EXCLUDED_TOOLS]
-        messages: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
+
+        # Build message list: prior history + current user turn.
+        # Anthropic requires messages to alternate roles starting with "user".
+        prior: list[dict[str, Any]] = history or []
+        messages: list[dict[str, Any]] = [
+            *prior,
+            {"role": "user", "content": user_text},
+        ]
         accumulated_text: list[str] = []
         tool_names_used: list[str] = []
 
@@ -50,6 +66,7 @@ class ClaudeClient:
             "model": settings.ANTHROPIC_MODEL,
             "max_tokens": settings.ANTHROPIC_MAX_TOKENS,
             "user_text_len": len(user_text),
+            "history_turns": len(prior),
         })
 
         for turn in range(_MAX_TURNS):

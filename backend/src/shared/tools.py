@@ -71,14 +71,41 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "get_upcoming_events",
-        "description": "Retrieve the user's upcoming calendar events.",
+        "description": (
+            "Retrieve the user's cached Google Calendar events. "
+            "Use whenever the user asks about their schedule, meetings, "
+            "appointments, or what they have today, tomorrow, or this week. "
+            "Prefer range='today', range='tomorrow', or range='this_week'. "
+            "Use custom start_time/end_time only when the user gives an explicit time range."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
+                "range": {
+                    "type": "string",
+                    "description": (
+                        "Named range interpreted in the connected calendar's timezone."
+                    ),
+                    "enum": ["today", "tomorrow", "this_week"],
+                    "default": "today",
+                },
+                "start_time": {
+                    "type": "string",
+                    "description": "Custom range start as an ISO 8601 datetime.",
+                },
+                "end_time": {
+                    "type": "string",
+                    "description": "Custom range end as an ISO 8601 datetime.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 25,
+                },
                 "hours_ahead": {
                     "type": "integer",
-                    "description": "How many hours ahead to look.",
-                    "default": 24,
+                    "description": "Legacy fallback. Prefer range instead.",
                 },
             },
         },

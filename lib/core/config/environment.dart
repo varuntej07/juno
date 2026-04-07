@@ -7,12 +7,14 @@ class EnvironmentConfig {
   final String apiBaseUrl;
   final String wsBaseUrl;
   final String firebaseProjectId;
+  final String googleServerClientId;
 
   const EnvironmentConfig({
     required this.env,
     required this.apiBaseUrl,
     required this.wsBaseUrl,
     required this.firebaseProjectId,
+    required this.googleServerClientId,
   });
 }
 
@@ -37,10 +39,11 @@ class Environment {
       case Env.prod:
         return const EnvironmentConfig(
           env: Env.prod,
-          // TODO: replace with your domain once purchased
-          apiBaseUrl: 'https://api.juno-app.com',
-          wsBaseUrl: 'wss://api.juno-app.com',
+          // Set after first Cloud Run deploy — copy the URL printed by deploy.sh
+          apiBaseUrl: 'https://juno-backend-wo3gl4yhlq-uc.a.run.app',
+          wsBaseUrl: 'wss://juno-backend-wo3gl4yhlq-uc.a.run.app',
           firebaseProjectId: 'juno-prod',
+          googleServerClientId: '620715294422-15h8gdqn7ii0b419ksfrf8u7fgghltoi.apps.googleusercontent.com',
         );
       case Env.staging:
         return const EnvironmentConfig(
@@ -48,6 +51,7 @@ class Environment {
           apiBaseUrl: 'https://staging.api.juno-app.com',
           wsBaseUrl: 'wss://staging.api.juno-app.com',
           firebaseProjectId: 'juno-staging',
+          googleServerClientId: '620715294422-15h8gdqn7ii0b419ksfrf8u7fgghltoi.apps.googleusercontent.com',
         );
       case Env.dev:
         // Controlled by lib/core/config/dev_targets.dart
@@ -57,6 +61,7 @@ class Environment {
           apiBaseUrl: DevTargets.devApiBaseUrl,
           wsBaseUrl: DevTargets.devWsBaseUrl,
           firebaseProjectId: 'juno-dev',
+          googleServerClientId: '620715294422-15h8gdqn7ii0b419ksfrf8u7fgghltoi.apps.googleusercontent.com',
         );
     }
   }

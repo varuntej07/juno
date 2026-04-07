@@ -30,10 +30,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config.settings import settings
 from .handlers.chat import handle_chat_request
+from .handlers.connectors import (
+    connect_google_calendar,
+    disconnect_google_calendar,
+    get_connectors,
+    google_calendar_webhook,
+    sync_google_calendar,
+)
 from .handlers.notification_reply import handle_notification_reply_request
 from .handlers.nutrition import handle_nutrition_analyze_request
 from .handlers.scheduler import handle_scheduler_tick
 from .lib.logger import logger
+from .services.request_auth import decode_firebase_claims
 from .voice_gateway.ws_handler import voice_stream_handler
 
 app = FastAPI(title="Juno Backend", version="1.0.0")
@@ -102,16 +110,13 @@ async def voice_stream(ws: WebSocket) -> None:
 
 def _to_lambda_event(request: Request, body: bytes) -> dict:
     """Convert FastAPI Request into a Lambda-style event dict."""
+    claims = decode_firebase_claims(request.headers) or {}
     return {
         "body": body.decode("utf-8"),
         "requestContext": {
             "authorizer": {
                 "jwt": {
-                    "claims": {
-                        # API Gateway JWT claims land here; populated by middleware
-                        # when deployed behind API Gateway with Cognito/JWT authorizer.
-                        # For direct FastAPI use, auth is handled in each handler.
-                    }
+                    "claims": claims
                 }
             }
         },
@@ -165,13 +170,40 @@ async def scheduler_tick_endpoint() -> JSONResponse:
 
 # ─── Startup ─────────────────────────────────────────────────────────────────
 
+@app.get("/connectors")
+async def connectors_endpoint(request: Request) -> JSONResponse:
+    return await get_connectors(request)
+
+
+@app.post("/connectors/google-calendar/connect")
+async def connectors_google_calendar_connect_endpoint(request: Request) -> JSONResponse:
+    return await connect_google_calendar(request)
+
+
+@app.post("/connectors/google-calendar/disconnect")
+async def connectors_google_calendar_disconnect_endpoint(request: Request) -> JSONResponse:
+    return await disconnect_google_calendar(request)
+
+
+@app.post("/connectors/google-calendar/sync")
+async def connectors_google_calendar_sync_endpoint(request: Request) -> JSONResponse:
+    return await sync_google_calendar(request)
+
+
+@app.post("/integrations/google-calendar/webhook", name="google_calendar_webhook")
+async def google_calendar_webhook_endpoint(request: Request) -> JSONResponse:
+    return await google_calendar_webhook(request)
+
+
 def _check_env() -> None:
     """Log the status of every critical env var so you can spot missing config instantly."""
     checks = {
         "ANTHROPIC_API_KEY": bool(settings.ANTHROPIC_API_KEY),
+        "ANTHROPIC_MODEL": settings.ANTHROPIC_MODEL,
         "AWS_REGION": bool(settings.AWS_REGION),
         "BEDROCK_MODEL": settings.BEDROCK_SONIC_MODEL_ID,
         "GOOGLE_CALENDAR": settings.google_calendar_configured,
+        "GOOGLE_CALENDAR_WEBHOOK_URL": bool(settings.GOOGLE_CALENDAR_WEBHOOK_URL),
         "ENV": settings.ENV,
     }
 

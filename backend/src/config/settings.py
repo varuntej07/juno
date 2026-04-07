@@ -38,13 +38,21 @@ class Settings(BaseSettings):
 
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
     ANTHROPIC_MAX_TOKENS: int = 1024
 
     # Google Calendar (optional)
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = ""
+    GOOGLE_CALENDAR_WEBHOOK_URL: str = ""
+    GOOGLE_CALENDAR_WATCH_TTL_SECONDS: int = 604800
+    GOOGLE_CALENDAR_CHANNEL_RENEWAL_LEAD_SECONDS: int = 21600
+    CALENDAR_SYNC_STALE_MINUTES: int = 5
+
+    # Chat history — number of prior turns forwarded to Claude for context.
+    # 10 messages ≈ 1k tokens per request. Tune via env var CHAT_HISTORY_WINDOW.
+    CHAT_HISTORY_WINDOW: int = 10
 
     # Juno personality
     JUNO_DEFAULT_SYSTEM_PROMPT: str = (

@@ -12,6 +12,7 @@ from typing import Any
 from ..config.settings import settings
 from ..lib.logger import logger
 from ..services.claude_client import ClaudeClient
+from ..services.request_auth import resolve_user_id
 from ..services.tool_executor import ToolExecutor
 
 
@@ -29,9 +30,13 @@ def _resolve_user_id(event: dict[str, Any], body: dict[str, Any]) -> str | None:
         return event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
     except (KeyError, TypeError):
         pass
-    # Explicit body field (dev/testing)
+
     uid = body.get("user_id")
-    return str(uid) if isinstance(uid, str) and uid else None
+    explicit_uid = str(uid) if isinstance(uid, str) and uid else None
+    return resolve_user_id(
+        event.get("headers"),
+        explicit_user_id=explicit_uid if not settings.is_production else None,
+    )
 
 
 async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
@@ -52,10 +57,22 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
         logger.warn("Chat: rejected — empty message", {"user_id": user_id})
         return _json(400, {"error": "message is required"})
 
+    # Optional conversation history: [{role: "user"|"assistant", content: str}]
+    # Capped server-side so a misbehaving client cannot blow the token budget.
+    raw_history: list[Any] = body.get("history") or []
+    history = [
+        {"role": str(h.get("role", "")), "content": str(h.get("content", ""))}
+        for h in raw_history
+        if isinstance(h, dict)
+           and h.get("role") in ("user", "assistant")
+           and h.get("content")
+    ][: settings.CHAT_HISTORY_WINDOW]
+
     logger.info("Chat: request received", {
         "user_id": user_id,
         "message_len": len(message),
         "message_preview": message[:80],
+        "history_turns": len(history),
     })
 
     try:
@@ -65,6 +82,7 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
         result = await claude.send_text_turn(
             system_prompt=settings.JUNO_DEFAULT_SYSTEM_PROMPT,
             user_text=message,
+            history=history,
         )
 
         duration_ms = int((time.monotonic() - start_ts) * 1000)

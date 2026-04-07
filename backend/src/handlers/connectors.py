@@ -1,0 +1,128 @@
+"""
+Connector REST handlers for Google Calendar.
+"""
+
+from __future__ import annotations
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError
+
+from ..config.settings import settings
+from ..lib.logger import logger
+from ..services.google_calendar_connector import GoogleCalendarConnector
+from ..services.request_auth import resolve_user_id_from_request
+
+
+class GoogleCalendarConnectBody(BaseModel):
+    server_auth_code: str
+
+
+def _unauthorized() -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content={"error": "Unauthorized: valid Firebase ID token required."},
+    )
+
+
+def _resolve_watch_url(request: Request) -> str | None:
+    if settings.GOOGLE_CALENDAR_WEBHOOK_URL:
+        return settings.GOOGLE_CALENDAR_WEBHOOK_URL
+
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if proto == "https" and host:
+        return f"https://{host}/integrations/google-calendar/webhook"
+
+    return None
+
+
+async def get_connectors(request: Request) -> JSONResponse:
+    user_id = resolve_user_id_from_request(request)
+    if not user_id:
+        return _unauthorized()
+
+    connector = GoogleCalendarConnector(user_id)
+    return JSONResponse(
+        status_code=200,
+        content={"google_calendar": connector.get_status()},
+    )
+
+
+async def connect_google_calendar(request: Request) -> JSONResponse:
+    user_id = resolve_user_id_from_request(request)
+    if not user_id:
+        return _unauthorized()
+
+    try:
+        body = GoogleCalendarConnectBody.model_validate(await request.json())
+    except (ValidationError, ValueError):
+        return JSONResponse(status_code=400, content={"error": "server_auth_code is required."})
+
+    connector = GoogleCalendarConnector(user_id)
+    try:
+        status = connector.connect(
+            body.server_auth_code,
+            watch_url=_resolve_watch_url(request),
+        )
+        return JSONResponse(status_code=200, content=status)
+    except Exception as exc:
+        logger.exception("Google Calendar connect failed", {
+            "user_id": user_id,
+            "error": str(exc),
+        })
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+async def disconnect_google_calendar(request: Request) -> JSONResponse:
+    user_id = resolve_user_id_from_request(request)
+    if not user_id:
+        return _unauthorized()
+
+    connector = GoogleCalendarConnector(user_id)
+    try:
+        status = connector.disconnect()
+        return JSONResponse(status_code=200, content=status)
+    except Exception as exc:
+        logger.exception("Google Calendar disconnect failed", {
+            "user_id": user_id,
+            "error": str(exc),
+        })
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+async def sync_google_calendar(request: Request) -> JSONResponse:
+    user_id = resolve_user_id_from_request(request)
+    if not user_id:
+        return _unauthorized()
+
+    connector = GoogleCalendarConnector(user_id)
+    try:
+        status = connector.sync_now()
+        return JSONResponse(status_code=200, content=status)
+    except Exception as exc:
+        logger.exception("Google Calendar sync failed", {
+            "user_id": user_id,
+            "error": str(exc),
+        })
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+async def google_calendar_webhook(request: Request) -> JSONResponse:
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    channel_id = headers.get("x-goog-channel-id", "")
+
+    connector = GoogleCalendarConnector.for_channel_id(channel_id)
+    if connector is None:
+        return JSONResponse(status_code=404, content={"error": "Unknown Google Calendar channel."})
+
+    try:
+        connector.enqueue_sync_from_notification(headers)
+        # Google treats any 2xx/102 as success.
+        return JSONResponse(status_code=202, content={"ok": True})
+    except Exception as exc:
+        logger.warn("Google Calendar webhook rejected", {
+            "channel_id": channel_id,
+            "error": str(exc),
+        })
+        return JSONResponse(status_code=400, content={"error": str(exc)})

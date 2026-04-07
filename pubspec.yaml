@@ -11,39 +11,46 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.8
+  cupertino_icons:
 
   # State management
-  provider: ^6.1.0
+  provider:
 
   # Firebase
-  firebase_core: ^3.13.0
-  firebase_auth: ^5.5.2
-  cloud_firestore: ^5.6.5
-  firebase_crashlytics: ^4.3.5
+  firebase_core:
+  firebase_auth:
+  cloud_firestore:
+  firebase_crashlytics:
 
   # Auth
-  google_sign_in: ^6.2.2
+  google_sign_in:
 
   # Network
-  http: ^1.4.0
-  connectivity_plus: ^6.1.4
+  http:
+  connectivity_plus:
 
   # Utilities
-  uuid: ^4.5.1
-  intl: ^0.20.2
-  shared_preferences: ^2.5.3
+  uuid:
+  intl:
+  shared_preferences:
 
   # Audio — real-time PCM recording + streaming playback
-  flutter_sound: ^9.15.11
+  flutter_sound:
 
   # Runtime permissions (microphone)
-  permission_handler: ^11.4.0
+  permission_handler:
+
+  # Local database — persistent chat history
+  drift:
+  drift_flutter:
+  sqlite3_flutter_libs:
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+  flutter_lints:
+  drift_dev:
+  build_runner:
 
 flutter:
   uses-material-design: true
