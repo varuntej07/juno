@@ -1,0 +1,237 @@
+"""
+Centralized FCM notification service.
+
+Usage anywhere in the backend:
+
+    from ..services.notification_service import send_notification
+
+    result = await send_notification(
+        user_id,
+        title="Juno Reminder",
+        body="Time to complete your rental application.",
+        data={"reminder_id": "abc123"},
+        notification_type="reminder",
+        priority="high",
+        collapse_key="reminder_abc123",
+        apns_category="JUNO_REMINDER",
+    )
+
+``send_notification`` is an async function — all blocking Firestore and
+Firebase Admin SDK calls are dispatched to a thread pool via
+``asyncio.to_thread`` so the event loop is never stalled.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+from firebase_admin import messaging
+
+from ..lib.logger import logger
+from .fcm_token_registry import (
+    INVALID_TOKEN_CODES,
+    get_user_tokens,
+    remove_invalid_tokens,
+)
+from .firebase import admin_messaging
+
+# Android notification channel created by the Flutter app on first launch.
+_ANDROID_CHANNEL_ID = "juno_default"
+
+
+@dataclass
+class NotificationResult:
+    """Result of a ``send_notification`` call."""
+
+    tokens_targeted: int
+    """Total number of device tokens the message was sent to."""
+
+    success_count: int
+    """Tokens that FCM accepted."""
+
+    failure_count: int
+    """Tokens that FCM rejected (includes invalid tokens)."""
+
+    invalid_tokens: list[str] = field(default_factory=list)
+    """Tokens that were permanently invalid and have been auto-deleted."""
+
+    @property
+    def delivered(self) -> bool:
+        """True if at least one token received the notification."""
+        return self.success_count > 0
+
+
+async def send_notification(
+    user_id: str,
+    *,
+    title: str,
+    body: str,
+    data: dict[str, str] | None = None,
+    notification_type: str = "general",
+    priority: Literal["high", "normal"] = "high",
+    collapse_key: str | None = None,
+    badge: int | None = None,
+    sound: str = "default",
+    apns_category: str | None = None,
+) -> NotificationResult:
+    """Send an FCM push notification to all registered devices for a user.
+
+    Automatically cleans up any permanently-invalid tokens that FCM
+    reports back so stale tokens never accumulate.
+
+    Args:
+        user_id:           Firestore user document ID.
+        title:             Notification title shown on the device.
+        body:              Notification body text.
+        data:              Extra string key-value pairs delivered to the app
+                           (on top of the built-in ``notification_type`` /
+                           ``user_id`` fields).  All values must be strings.
+        notification_type: Client-side routing key (e.g. ``"reminder"``,
+                           ``"calendar_event"``, ``"chat"``, ``"general"``).
+                           Delivered in the FCM data payload so the Flutter
+                           app can navigate to the right screen on tap.
+        priority:          ``"high"`` for time-sensitive alerts (wakes the
+                           device), ``"normal"`` for background sync.
+        collapse_key:      Replaces a pending notification with the same key.
+                           Use ``f"reminder_{reminder_id}"`` to prevent
+                           duplicate reminder banners.
+        badge:             iOS app badge count.  ``None`` leaves the badge
+                           unchanged.
+        sound:             Notification sound name.  Defaults to
+                           ``"default"`` (system sound).
+        apns_category:     iOS interactive notification category (enables
+                           action buttons defined in the app).
+
+    Returns:
+        ``NotificationResult`` with delivery counts and a list of invalid
+        tokens that were auto-deleted from Firestore.
+    """
+    # ── 1. Fetch registered tokens ──────────────────────────────────────────
+    token_docs: list[dict[str, Any]] = await asyncio.to_thread(
+        get_user_tokens, user_id
+    )
+
+    if not token_docs:
+        logger.info("send_notification: no registered tokens — skipping", {
+            "user_id": user_id,
+            "title": title,
+            "notification_type": notification_type,
+        })
+        return NotificationResult(
+            tokens_targeted=0,
+            success_count=0,
+            failure_count=0,
+        )
+
+    token_strings: list[str] = [doc["token"] for doc in token_docs]
+
+    # ── 2. Build FCM data payload ────────────────────────────────────────────
+    payload: dict[str, str] = {
+        "notification_type": notification_type,
+        "user_id": user_id,
+    }
+    if data:
+        payload.update(data)
+
+    # ── 3. Build platform-specific message ──────────────────────────────────
+    apns_headers: dict[str, str] = {
+        "apns-priority": "10" if priority == "high" else "5",
+    }
+    if collapse_key:
+        apns_headers["apns-collapse-id"] = collapse_key
+
+    message = messaging.MulticastMessage(
+        tokens=token_strings,
+        notification=messaging.Notification(title=title, body=body),
+        data=payload,
+        android=messaging.AndroidConfig(
+            priority="high" if priority == "high" else "normal",
+            collapse_key=collapse_key,
+            notification=messaging.AndroidNotification(
+                sound=sound,
+                channel_id=_ANDROID_CHANNEL_ID,
+                notification_priority=(
+                    messaging.AndroidNotificationPriority.HIGH
+                    if priority == "high"
+                    else messaging.AndroidNotificationPriority.DEFAULT
+                ),
+            ),
+        ),
+        apns=messaging.APNSConfig(
+            headers=apns_headers,
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(
+                    sound=sound,
+                    badge=badge,
+                    category=apns_category,
+                    content_available=True,
+                ),
+            ),
+        ),
+    )
+
+    logger.info("send_notification: sending", {
+        "user_id": user_id,
+        "notification_type": notification_type,
+        "title": title,
+        "token_count": len(token_strings),
+        "priority": priority,
+        "collapse_key": collapse_key,
+    })
+
+    # ── 4. Send via FCM ──────────────────────────────────────────────────────
+    batch_response: messaging.BatchResponse = await asyncio.to_thread(
+        admin_messaging().send_each_for_multicast, message
+    )
+
+    # ── 5. Collect invalid tokens from FCM response ──────────────────────────
+    invalid: list[str] = []
+    for idx, response in enumerate(batch_response.responses):
+        if response.success:
+            continue
+        exc = response.exception
+        error_code = ""
+        if exc is not None:
+            # firebase_admin wraps errors; code is in exc.cause or exc.code
+            error_code = (
+                getattr(exc, "code", "")
+                or getattr(getattr(exc, "cause", None), "error_code", "")
+                or ""
+            )
+            if isinstance(error_code, str):
+                # Normalise: "messaging/registration-token-not-registered"
+                error_code = error_code.split("/")[-1].lower()
+
+        logger.warning("send_notification: token delivery failed", {
+            "user_id": user_id,
+            "token_preview": token_strings[idx][:20],
+            "error_code": error_code,
+            "error": str(exc),
+        })
+
+        if error_code in INVALID_TOKEN_CODES:
+            invalid.append(token_strings[idx])
+
+    # ── 6. Auto-delete permanently invalid tokens ────────────────────────────
+    if invalid:
+        await asyncio.to_thread(remove_invalid_tokens, user_id, invalid)
+
+    result = NotificationResult(
+        tokens_targeted=len(token_strings),
+        success_count=batch_response.success_count,
+        failure_count=batch_response.failure_count,
+        invalid_tokens=invalid,
+    )
+
+    logger.info("send_notification: complete", {
+        "user_id": user_id,
+        "notification_type": notification_type,
+        "tokens_targeted": result.tokens_targeted,
+        "success_count": result.success_count,
+        "failure_count": result.failure_count,
+        "invalid_removed": len(invalid),
+    })
+
+    return result

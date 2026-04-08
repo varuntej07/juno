@@ -1,0 +1,238 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../../core/constants/api_endpoints.dart';
+import '../../core/logging/app_logger.dart';
+import '../../core/network/api_client.dart';
+import '../../core/network/api_response.dart';
+
+const _tag = 'NotificationService';
+
+/// Android notification channel used for all Juno notifications.
+/// Must match the `channel_id` sent by the backend (`juno_default`).
+const _kAndroidChannelId = 'juno_default';
+const _kAndroidChannelName = 'Juno Notifications';
+
+/// Centralized FCM notification service.
+///
+/// Call [initialize] once after the user authenticates.  It:
+/// 1. Requests OS notification permission (iOS 14+ / Android 13+).
+/// 2. Retrieves the FCM token and registers it with the backend.
+/// 3. Listens for token refreshes and re-registers automatically.
+/// 4. Handles foreground messages (shows a local system notification).
+/// 5. Handles background → foreground tap navigation.
+/// 6. Creates the Android notification channel on first launch.
+///
+/// The service is idempotent — calling [initialize] more than once is safe.
+class NotificationService {
+  final ApiClient _apiClient;
+
+  NotificationService({required ApiClient apiClient})
+      : _apiClient = apiClient;
+
+  // ── State ─────────────────────────────────────────────────────────────────
+
+  bool _initialized = false;
+  String? _userId;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+  StreamSubscription<RemoteMessage>? _foregroundSubscription;
+
+  final _localNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  // ── Public API ────────────────────────────────────────────────────────────
+
+  /// Initialize FCM for the signed-in [userId].
+  ///
+  /// Safe to call multiple times; subsequent calls update the stored [userId]
+  /// in case the account changed (unlikely but handled).
+  Future<void> initialize(String userId) async {
+    _userId = userId;
+
+    if (_initialized) {
+      // Already running — just ensure the current token is registered in
+      // case the user signed in with a different account.
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) unawaited(_registerToken(token));
+      return;
+    }
+    _initialized = true;
+
+    // ── 1. Request OS permission ──────────────────────────────────────────
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      AppLogger.warning(
+        'Notification permission denied — FCM will not deliver alerts',
+        tag: _tag,
+        metadata: {'userId': userId},
+      );
+      return;
+    }
+
+    AppLogger.info(
+      'Notification permission granted',
+      tag: _tag,
+      metadata: {
+        'status': settings.authorizationStatus.name,
+        'userId': userId,
+      },
+    );
+
+    // ── 2. Create Android notification channel ───────────────────────────
+    await _createAndroidChannel();
+
+    // ── 3. Get current token and register with backend ───────────────────
+    final token = await FirebaseMessaging.instance.getToken();
+    AppLogger.info(
+      'FCM token retrieved',
+      tag: _tag,
+      metadata: {'tokenPreview': token?.substring(0, 20)},
+    );
+    if (token != null) unawaited(_registerToken(token));
+
+    // ── 4. Auto-register on token refresh ────────────────────────────────
+    await _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh
+        .listen((newToken) {
+      AppLogger.info(
+        'FCM token refreshed — re-registering',
+        tag: _tag,
+        metadata: {'tokenPreview': newToken.substring(0, 20)},
+      );
+      unawaited(_registerToken(newToken));
+    });
+
+    // ── 5. Foreground messages → show local notification ─────────────────
+    await _foregroundSubscription?.cancel();
+    _foregroundSubscription = FirebaseMessaging.onMessage.listen(
+      _handleForegroundMessage,
+    );
+
+    // ── 6. App opened from background via notification tap ───────────────
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+
+    // ── 7. App opened from terminated state via notification tap ─────────
+    final initialMessage =
+        await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      _handleNotificationTap(initialMessage);
+    }
+  }
+
+  /// Call on sign-out to clean up listeners.
+  Future<void> dispose() async {
+    await _tokenRefreshSubscription?.cancel();
+    await _foregroundSubscription?.cancel();
+    _tokenRefreshSubscription = null;
+    _foregroundSubscription = null;
+    _userId = null;
+    _initialized = false;
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  Future<void> _registerToken(String token) async {
+    final uid = _userId;
+    if (uid == null) return;
+
+    final platform = Platform.isIOS
+        ? 'ios'
+        : Platform.isAndroid
+            ? 'android'
+            : 'web';
+
+    final result = await _apiClient.post(
+      ApiEndpoints.deviceRegister,
+      {'token': token, 'platform': platform},
+      (json) => json,
+    );
+
+    result.when(
+      success: (_) => AppLogger.info(
+        'FCM token registered with backend',
+        tag: _tag,
+        metadata: {'platform': platform, 'tokenPreview': token.substring(0, 20)},
+      ),
+      failure: (error) => AppLogger.error(
+        'Failed to register FCM token',
+        error: error,
+        tag: _tag,
+      ),
+    );
+  }
+
+  Future<void> _createAndroidChannel() async {
+    const channel = AndroidNotificationChannel(
+      _kAndroidChannelId,
+      _kAndroidChannelName,
+      importance: Importance.high,
+      enableVibration: true,
+      playSound: true,
+    );
+    await _localNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+    AppLogger.debug(
+      'Android notification channel created',
+      tag: _tag,
+      metadata: {'channelId': _kAndroidChannelId},
+    );
+  }
+
+  /// Show a system notification while the app is in the foreground.
+  Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    final notification = message.notification;
+    if (notification == null) return;
+
+    AppLogger.info(
+      'FCM foreground message received',
+      tag: _tag,
+      metadata: {
+        'messageId': message.messageId,
+        'title': notification.title,
+        'notificationType': message.data['notification_type'],
+      },
+    );
+
+    // Let FCM render the native OS banner even while the app is foregrounded.
+    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+  }
+
+  /// Handle notification tap (from background or terminated state).
+  void _handleNotificationTap(RemoteMessage message) {
+    final notificationType = message.data['notification_type'] as String?;
+    AppLogger.info(
+      'Notification tapped',
+      tag: _tag,
+      metadata: {
+        'messageId': message.messageId,
+        'notificationType': notificationType,
+        'reminderId': message.data['reminder_id'],
+      },
+    );
+    // Navigation is intentionally left as a hook here.
+    // Wire a NavigatorKey or use go_router when deep-linking is needed:
+    //
+    //   switch (notificationType) {
+    //     case 'reminder': navigatorKey.currentState?.pushNamed('/reminders');
+    //     case 'calendar_event': navigatorKey.currentState?.pushNamed('/calendar');
+    //     default: navigatorKey.currentState?.pushNamed('/');
+    //   }
+  }
+
+  /// Convenience accessor used for testing / debug screens.
+  Future<String?> getToken() => FirebaseMessaging.instance.getToken();
+}

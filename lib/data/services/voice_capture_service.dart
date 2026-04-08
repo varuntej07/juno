@@ -35,6 +35,15 @@ class FlutterSoundCaptureService implements VoiceCaptureService {
       return;
     }
 
+    // Guard against double-start: clean up any existing session first.
+    if (_recorder.isRecording) {
+      AppLogger.warning(
+        'start() called while already recording — stopping previous session',
+        tag: 'VoiceCaptureService',
+      );
+      await stop();
+    }
+
     if (!_isOpen) {
       await _recorder.openRecorder();
       _isOpen = true;

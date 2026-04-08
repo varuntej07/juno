@@ -40,8 +40,8 @@ class Environment {
         return const EnvironmentConfig(
           env: Env.prod,
           // Set after first Cloud Run deploy — copy the URL printed by deploy.sh
-          apiBaseUrl: 'https://juno-backend-wo3gl4yhlq-uc.a.run.app',
-          wsBaseUrl: 'wss://juno-backend-wo3gl4yhlq-uc.a.run.app',
+          apiBaseUrl: 'https://juno-backend-620715294422.us-central1.run.app',
+          wsBaseUrl: 'wss://juno-backend-620715294422.us-central1.run.app',
           firebaseProjectId: 'juno-prod',
           googleServerClientId: '620715294422-15h8gdqn7ii0b419ksfrf8u7fgghltoi.apps.googleusercontent.com',
         );

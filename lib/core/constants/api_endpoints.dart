@@ -12,6 +12,9 @@ class ApiEndpoints {
   static String get reminders => '$baseUrl/reminders';
   static String get nutritionAnalyze => '$baseUrl/nutrition/analyze';
 
+  // Device / push notification token registration
+  static String get deviceRegister => '$baseUrl/devices/register';
+
   // WebSocket
   static String get voiceStream => '$wsBaseUrl/voice/stream';
 }

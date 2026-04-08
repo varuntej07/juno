@@ -30,6 +30,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Default FCM notification channel (must match juno_default in NotificationService) -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="juno_default" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -40,6 +44,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- Internet: required for WebSocket voice gateway connection -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Push notifications: required on Android 13+ (API 33+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <queries>
         <intent>

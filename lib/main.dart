@@ -1,4 +1,5 @@
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
@@ -8,10 +9,29 @@ import 'core/errors/error_handler.dart';
 import 'core/logging/app_logger.dart';
 import 'di/providers.dart';
 
+/// FCM background message handler.
+/// Must be a top-level function (Flutter / isolate constraint)
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Firebase must be re-initialized in background isolates
+  await FirebaseConfig.initialize();
+  AppLogger.info(
+    'FCM background message received',
+    tag: 'FCM',
+    metadata: {
+      'messageId': message.messageId,
+      'notificationType': message.data['notification_type'],
+    },
+  );
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final firebaseReady = await FirebaseConfig.initialize();
+
+  // Register the background handler before runApp so FCM can wire it up during app startup
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   ErrorHandler.init();
   ErrorHandler.setEnvironment(Environment.current.env.name);

@@ -30,6 +30,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config.settings import settings
 from .handlers.chat import handle_chat_request
+from .handlers.devices import register_device
 from .handlers.connectors import (
     connect_google_calendar,
     disconnect_google_calendar,
@@ -136,6 +137,11 @@ def _lambda_response(result: dict) -> JSONResponse:
     except (json.JSONDecodeError, TypeError):
         body_dict = {"raw": body_str}
     return JSONResponse(content=body_dict, status_code=result.get("statusCode", 500))
+
+
+@app.post("/devices/register")
+async def devices_register_endpoint(request: Request) -> JSONResponse:
+    return await register_device(request)
 
 
 @app.post("/chat")

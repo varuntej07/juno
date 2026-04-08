@@ -70,16 +70,25 @@ async def _resolve_user_id(ws: WebSocket) -> str | None:
 
 
 def _make_send(ws: WebSocket):
-    """Return a sync callable that queues a WebSocket send (fire-and-forget)."""
+    """Return a sync callable that queues a WebSocket send (fire-and-forget).
+
+    The running event loop is captured once at creation time (we are inside an
+    async handler at this point) so every call to ``send`` avoids a redundant
+    ``get_event_loop`` lookup and is safe to call from any asyncio Task.
+    """
     import asyncio
 
+    loop = asyncio.get_running_loop()
+
     def send(message: ServerMessage) -> None:
+        if loop.is_closed():
+            return
         payload = message.model_dump_json(exclude_none=True)
         try:
-            loop = asyncio.get_event_loop()
             loop.create_task(ws.send_text(payload))
         except RuntimeError:
-            pass  # loop closed — session shutting down
+            # Loop is shutting down; nothing useful to do.
+            pass
 
     return send
 

@@ -1,18 +1,25 @@
+import 'dart:async';
+
 import '../../core/base/safe_change_notifier.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/errors/error_handler.dart';
 import '../../core/logging/app_logger.dart';
 import '../../data/models/user_model.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../data/services/notification_service.dart';
 import 'view_state.dart';
 
 export 'view_state.dart';
 
 class AuthViewModel extends SafeChangeNotifier {
   final AuthRepository _authRepository;
+  final NotificationService _notificationService;
 
-  AuthViewModel({required AuthRepository authRepository})
-      : _authRepository = authRepository;
+  AuthViewModel({
+    required AuthRepository authRepository,
+    required NotificationService notificationService,
+  })  : _authRepository = authRepository,
+        _notificationService = notificationService;
 
   ViewState _state = ViewState.idle;
   UserModel? _user;
@@ -37,6 +44,8 @@ class AuthViewModel extends SafeChangeNotifier {
           _user = user;
           if (user != null) {
             ErrorHandler.setUser(user.uid);
+            // Register FCM token for the already-authenticated user.
+            unawaited(_notificationService.initialize(user.uid));
           }
           _setState(ViewState.loaded);
         },
@@ -63,6 +72,8 @@ class AuthViewModel extends SafeChangeNotifier {
           _error = null;
           ErrorHandler.setUser(user.uid);
           ErrorHandler.logBreadcrumb('user_signed_in', metadata: {'uid': user.uid});
+          // Register FCM token for the freshly signed-in user.
+          unawaited(_notificationService.initialize(user.uid));
           _setState(ViewState.loaded);
         },
         failure: (error) {

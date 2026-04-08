@@ -56,10 +56,17 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
     if not message:
         logger.warn("Chat: rejected — empty message", {"user_id": user_id})
         return _json(400, {"error": "message is required"})
+    if len(message) > 8_000:
+        logger.warn("Chat: rejected — message too long", {
+            "user_id": user_id,
+            "message_len": len(message),
+        })
+        return _json(400, {"error": "message must be 8 000 characters or fewer"})
 
     # Optional conversation history: [{role: "user"|"assistant", content: str}]
-    # Capped server-side so a misbehaving client cannot blow the token budget.
-    raw_history: list[Any] = body.get("history") or []
+    # Pre-slice the raw list before iterating to avoid allocating huge lists
+    # when a misbehaving client sends thousands of entries.
+    raw_history: list[Any] = (body.get("history") or [])[-settings.CHAT_HISTORY_WINDOW * 2 :]
     history = [
         {"role": str(h.get("role", "")), "content": str(h.get("content", ""))}
         for h in raw_history

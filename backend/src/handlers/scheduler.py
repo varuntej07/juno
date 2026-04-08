@@ -1,19 +1,17 @@
 """
 POST /scheduler/tick — find due reminders and send FCM push notifications.
-Called by a cron job (EventBridge, Cloud Scheduler, etc.) every minute.
+Called by a cron job (Cloud Scheduler, EventBridge, etc.) every minute.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
-from firebase_admin import messaging
-
 from ..lib.logger import logger
-from ..services.firebase import admin_messaging
-from ..services.google_calendar_connector import GoogleCalendarConnector
-from ..services.tool_executor import fetch_due_reminders, list_user_fcm_tokens, mark_reminder_fired
+from ..services.notification_service import send_notification
+from ..services.tool_executor import fetch_due_reminders, mark_reminder_fired
 
 
 def _json(status: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -24,59 +22,66 @@ def _json(status: int, payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _send_reminder_notification(
-    user_id: str,
-    reminder_id: str,
-    data: dict[str, Any],
-) -> messaging.BatchResponse | None:
-    tokens = list_user_fcm_tokens(user_id)
-    if not tokens:
-        return None
-
-    message = messaging.MulticastMessage(
-        tokens=tokens,
-        notification=messaging.Notification(
-            title="Juno Reminder",
-            body=str(data.get("message", "Reminder due now")),
-        ),
-        data={
-            "type": "reminder",
-            "reminder_id": reminder_id,
-            "user_id": user_id,
-            "created_via": str(data.get("created_via", "voice")),
-        },
-        android=messaging.AndroidConfig(priority="high"),
-        apns=messaging.APNSConfig(
-            payload=messaging.APNSPayload(
-                aps=messaging.Aps(sound="default", category="JUNO_REMINDER"),
-            )
-        ),
-    )
-    return admin_messaging().send_each_for_multicast(message)
-
-
 async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str, Any]:
-    try:
-        renewed_channels = GoogleCalendarConnector.renew_expiring_channels(limit=10)
-        synced_calendars = GoogleCalendarConnector.process_pending_sync_jobs(limit=20)
+    """Run one scheduler tick.
 
-        due = fetch_due_reminders()
+    All Firestore / Firebase Admin SDK calls are synchronous (blocking I/O).
+    They are dispatched to a thread-pool via ``asyncio.to_thread`` so they
+    never block the event loop.
+
+    Notifications are sent via the centralized ``send_notification`` function
+    which handles token lookup, FCM multicast, and invalid-token cleanup
+    automatically.
+    """
+    try:
+        from ..services.google_calendar_connector import GoogleCalendarConnector
+
+        renewed_channels, synced_calendars, due = await asyncio.gather(
+            asyncio.to_thread(GoogleCalendarConnector.renew_expiring_channels, 10),
+            asyncio.to_thread(GoogleCalendarConnector.process_pending_sync_jobs, 20),
+            asyncio.to_thread(fetch_due_reminders),
+        )
+
         delivered = 0
 
         for item in due:
-            user_id = item["userId"]
-            reminder_id = item["reminderId"]
-            data = item["data"]
+            user_id: str = item["userId"]
+            reminder_id: str = item["reminderId"]
+            data: dict[str, Any] = item["data"]
 
             try:
-                result = _send_reminder_notification(user_id, reminder_id, data)
-                if result and result.success_count > 0:
-                    mark_reminder_fired(user_id, reminder_id)
+                result = await send_notification(
+                    user_id,
+                    title="Juno Reminder",
+                    body=str(data.get("message", "Reminder due now")),
+                    data={
+                        "reminder_id": reminder_id,
+                        "created_via": str(data.get("created_via", "voice")),
+                    },
+                    notification_type="reminder",
+                    priority="high",
+                    # Collapse prevents duplicate banners if the scheduler
+                    # fires more than once before the user dismisses.
+                    collapse_key=f"reminder_{reminder_id}",
+                    apns_category="JUNO_REMINDER",
+                )
+
+                if result.delivered:
+                    await asyncio.to_thread(mark_reminder_fired, user_id, reminder_id)
                     delivered += 1
                     logger.info("Reminder delivered", {
                         "user_id": user_id,
                         "reminder_id": reminder_id,
+                        "tokens_targeted": result.tokens_targeted,
+                        "success_count": result.success_count,
                     })
+                else:
+                    logger.warn("Reminder not delivered — no valid tokens", {
+                        "user_id": user_id,
+                        "reminder_id": reminder_id,
+                        "tokens_targeted": result.tokens_targeted,
+                    })
+
             except Exception as exc:
                 logger.error("Failed to deliver reminder", {
                     "user_id": user_id,

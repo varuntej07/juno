@@ -13,6 +13,7 @@ import '../data/services/firebase_auth_service.dart';
 import '../data/services/firestore_service.dart';
 import '../data/services/google_calendar_connector_service.dart';
 import '../data/services/lambda_api_service.dart';
+import '../data/services/notification_service.dart';
 import '../data/services/voice_capture_service.dart';
 import '../data/services/voice_playback_service.dart';
 import '../data/services/voice_session_service.dart';
@@ -45,6 +46,7 @@ List<SingleChildWidget> buildProviders() {
     apiClient: apiClient,
     authService: firebaseAuthService,
   );
+  final notificationService = NotificationService(apiClient: apiClient);
   final voiceSessionService = VoiceSessionService(
     tokenProvider: firebaseAuthService.getIdToken,
   );
@@ -74,6 +76,7 @@ List<SingleChildWidget> buildProviders() {
     Provider<ChatRepository>.value(value: chatRepository),
 
     // Remote services
+    Provider<NotificationService>.value(value: notificationService),
     Provider<LambdaApiService>.value(value: lambdaApiService),
     Provider<GoogleCalendarConnectorService>.value(
       value: googleCalendarConnectorService,
@@ -90,7 +93,10 @@ List<SingleChildWidget> buildProviders() {
 
     // ViewModels
     ChangeNotifierProvider<AuthViewModel>(
-      create: (_) => AuthViewModel(authRepository: authRepository),
+      create: (_) => AuthViewModel(
+        authRepository: authRepository,
+        notificationService: notificationService,
+      ),
     ),
     ChangeNotifierProvider<HomeViewModel>(
       create: (_) => HomeViewModel(

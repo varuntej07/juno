@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/errors/error_handler.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/local/app_database.dart';
 import '../../../data/models/chat_message_model.dart';
@@ -44,12 +45,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     // Restore chat history and start wake word after the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final homeVm = context.read<HomeViewModel>();
-      // Load last session's messages before any network calls.
-      await homeVm.initSession();
-      final uid = context.read<AuthViewModel>().user?.uid;
-      if (uid != null && uid.isNotEmpty) {
-        await homeVm.initWakeWord(uid);
+      try {
+        final homeVm = context.read<HomeViewModel>();
+        // Load last session's messages before any network calls.
+        await homeVm.initSession();
+        final uid = context.read<AuthViewModel>().user?.uid;
+        if (uid != null && uid.isNotEmpty) {
+          await homeVm.initWakeWord(uid);
+        }
+      } catch (e, st) {
+        // Exceptions in postFrameCallback are otherwise silently swallowed.
+        ErrorHandler.handle(e, st);
       }
     });
   }

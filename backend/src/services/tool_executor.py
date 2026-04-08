@@ -360,13 +360,14 @@ def mark_reminder_fired(user_id: str, reminder_id: str) -> None:
 
 
 def list_user_fcm_tokens(user_id: str) -> list[str]:
-    db = admin_firestore()
-    doc = db.collection("users").document(user_id).get()
-    if not doc.exists:
-        return []
-    data = doc.to_dict() or {}
-    tokens = data.get("fcm_tokens", [])
-    return tokens if isinstance(tokens, list) else []
+    """Return all FCM token strings for a user.
+
+    Reads from the ``users/{uid}/fcm_tokens`` subcollection managed by
+    :mod:`fcm_token_registry`.  Kept for backward compatibility with any
+    callers that haven't been migrated to ``send_notification`` yet.
+    """
+    from .fcm_token_registry import get_user_tokens
+    return [t["token"] for t in get_user_tokens(user_id)]
 
 
 def log_tool_failure(tool_name: str, error: Exception) -> None:

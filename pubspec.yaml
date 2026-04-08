@@ -21,6 +21,8 @@ dependencies:
   firebase_auth:
   cloud_firestore:
   firebase_crashlytics:
+  firebase_messaging:
+  flutter_local_notifications:
 
   # Auth
   google_sign_in:
