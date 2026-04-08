@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
+import 'presentation/screens/app_shell.dart';
 import 'presentation/screens/auth/login_screen.dart';
-import 'presentation/screens/home/home_screen.dart';
 import 'presentation/viewmodels/auth_viewmodel.dart';
 import 'presentation/widgets/loading_indicator.dart';
 
@@ -46,7 +46,7 @@ class _RootScreenState extends State<_RootScreen> {
           );
         }
         if (vm.isAuthenticated) {
-          return const HomeScreen();
+          return const AppShell();
         }
         return const LoginScreen();
       },

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -5,80 +7,131 @@ import '../../core/errors/app_exception.dart';
 import '../../core/network/api_response.dart';
 import '../local/app_database.dart';
 import '../models/chat_message_model.dart';
+import '../services/chat_backup_service.dart';
 
-/// All chat persistence goes through this repository.
-/// Callers (ViewModels) never touch AppDatabase directly.
-///
-/// Contract:
-/// - Every method returns [Result<T>] — never throws.
-/// - Write methods are fire-and-forget friendly: callers may unawaited them.
 class ChatRepository {
   final AppDatabase _db;
+  final ChatBackupService _chatBackupService;
+
   static const _uuid = Uuid();
 
-  ChatRepository({required AppDatabase db}) : _db = db;
+  ChatRepository({
+    required AppDatabase db,
+    required ChatBackupService chatBackupService,
+  })  : _db = db,
+        _chatBackupService = chatBackupService;
 
-  // ── Session management ────────────────────────────────────────────────────
-
-  /// Creates a new session and returns its id.
   Future<String> createSession() async {
     final id = _uuid.v4();
+    final now = DateTime.now();
     await _db.into(_db.chatSessions).insert(
           ChatSessionsCompanion.insert(
             id: id,
-            startedAt: DateTime.now(),
+            startedAt: now,
+            updatedAt: Value(now),
           ),
         );
     return id;
   }
 
-  /// Returns up to [limit] sessions ordered newest-first.
   Future<Result<List<ChatSession>>> loadRecentSessions({int limit = 10}) async {
     try {
       final rows = await (_db.select(_db.chatSessions)
-            ..orderBy([(t) => OrderingTerm.desc(t.startedAt)])
+            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
             ..limit(limit))
           .get();
       return Result.success(rows);
     } catch (e, st) {
       return Result.failure(
-        AppException.unexpected('Failed to load sessions', error: e, stackTrace: st),
+        AppException.unexpected(
+          'Failed to load sessions',
+          error: e,
+          stackTrace: st,
+        ),
       );
     }
   }
 
-  /// Deletes a session and all its messages (cascade).
   Future<Result<void>> deleteSession(String sessionId) async {
     try {
-      await (_db.delete(_db.chatSessions)
-            ..where((t) => t.id.equals(sessionId)))
-          .go();
+      await (_db.delete(_db.chatSessions)..where((t) => t.id.equals(sessionId))).go();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure(
-        AppException.unexpected('Failed to delete session', error: e, stackTrace: st),
+        AppException.unexpected(
+          'Failed to delete session',
+          error: e,
+          stackTrace: st,
+        ),
       );
     }
   }
 
-  // ── Message CRUD ──────────────────────────────────────────────────────────
+  Future<Result<void>> saveMessage(
+    ChatMessageModel msg, {
+    String? userId,
+  }) async {
+    final sessionId = msg.sessionId;
+    if (sessionId == null) {
+      return Result.failure(
+        AppException.unexpected('Failed to persist message: missing session id.'),
+      );
+    }
 
-  /// Persists a single message. Safe to call with unawaited.
-  Future<void> saveMessage(ChatMessageModel msg) async {
-    assert(msg.sessionId != null, 'saveMessage: msg.sessionId must be set before persisting');
-    await _db.into(_db.chatMessages).insertOnConflictUpdate(
-          ChatMessagesCompanion.insert(
-            id: msg.id,
-            sessionId: msg.sessionId!,
-            content: msg.text,
-            isUser: msg.isUser,
-            channel: msg.channel.name,
-            timestamp: msg.timestamp,
+    try {
+      await _db.transaction(() async {
+        final session = await (_db.select(_db.chatSessions)
+              ..where((t) => t.id.equals(sessionId)))
+            .getSingleOrNull();
+        if (session == null) {
+          throw StateError('Chat session $sessionId not found');
+        }
+
+        final nextSequence = session.messageCount + 1;
+        await _db.into(_db.chatMessages).insertOnConflictUpdate(
+              ChatMessagesCompanion.insert(
+                id: msg.id,
+                sessionId: sessionId,
+                content: msg.text,
+                isUser: msg.isUser,
+                channel: msg.channel.name,
+                timestamp: msg.timestamp,
+                sequence: Value(nextSequence),
+              ),
+            );
+
+        await (_db.update(_db.chatSessions)..where((t) => t.id.equals(sessionId))).write(
+          ChatSessionsCompanion(
+            updatedAt: Value(msg.timestamp),
+            lastMessageAt: Value(msg.timestamp),
+            lastMessagePreview: Value(_previewText(msg.text)),
+            messageCount: Value(nextSequence),
           ),
         );
+      });
+
+      if (userId != null && userId.isNotEmpty) {
+        unawaited(
+          _chatBackupService.enqueueMessageUpsert(
+            userId: userId,
+            sessionId: sessionId,
+            messageId: msg.id,
+          ),
+        );
+      }
+
+      return const Result.success(null);
+    } catch (e, st) {
+      return Result.failure(
+        AppException.unexpected(
+          'Failed to persist message',
+          error: e,
+          stackTrace: st,
+        ),
+      );
+    }
   }
 
-  /// Returns the latest [limit] messages for a session, oldest-first.
   Future<Result<List<ChatMessageModel>>> loadMessages(
     String sessionId, {
     int limit = 50,
@@ -86,27 +139,65 @@ class ChatRepository {
     try {
       final rows = await (_db.select(_db.chatMessages)
             ..where((t) => t.sessionId.equals(sessionId))
-            ..orderBy([(t) => OrderingTerm.asc(t.timestamp)])
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.sequence),
+              (t) => OrderingTerm.asc(t.timestamp),
+            ])
             ..limit(limit))
           .get();
       return Result.success(rows.map(_rowToModel).toList());
     } catch (e, st) {
       return Result.failure(
-        AppException.unexpected('Failed to load messages', error: e, stackTrace: st),
+        AppException.unexpected(
+          'Failed to load messages',
+          error: e,
+          stackTrace: st,
+        ),
       );
     }
   }
 
-  // ── Session title ─────────────────────────────────────────────────────────
+  Future<Result<void>> setSessionTitle(
+    String sessionId,
+    String title, {
+    String? userId,
+  }) async {
+    try {
+      await (_db.update(_db.chatSessions)..where((t) => t.id.equals(sessionId))).write(
+        ChatSessionsCompanion(
+          title: Value(title),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
 
-  /// Sets a human-readable title on a session (first user message, trimmed).
-  Future<void> setSessionTitle(String sessionId, String title) async {
-    await (_db.update(_db.chatSessions)
-          ..where((t) => t.id.equals(sessionId)))
-        .write(ChatSessionsCompanion(title: Value(title)));
+      if (userId != null && userId.isNotEmpty) {
+        unawaited(
+          _chatBackupService.enqueueSessionUpsert(
+            userId: userId,
+            sessionId: sessionId,
+          ),
+        );
+      }
+
+      return const Result.success(null);
+    } catch (e, st) {
+      return Result.failure(
+        AppException.unexpected(
+          'Failed to update session title',
+          error: e,
+          stackTrace: st,
+        ),
+      );
+    }
   }
 
-  // ── Private helpers ───────────────────────────────────────────────────────
+  static String _previewText(String text) {
+    final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= 160) {
+      return normalized;
+    }
+    return '${normalized.substring(0, 157)}...';
+  }
 
   static ChatMessageModel _rowToModel(ChatMessage row) {
     return ChatMessageModel(

@@ -1,10 +1,15 @@
 """
 ToolExecutor — implements all 9 Juno tools.
 Same Firestore paths and logic as the TS version.
+
+All firebase-admin SDK calls (Firestore, FCM) are synchronous/blocking.
+Every method wraps them in asyncio.to_thread so they never stall the
+FastAPI event loop.
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -102,7 +107,7 @@ class ToolExecutor:
         reminder_id = str(uuid4())
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        self._reminders_ref().document(reminder_id).set({
+        data = {
             "id": reminder_id,
             "message": message,
             "trigger_at": trigger_at,
@@ -111,7 +116,9 @@ class ToolExecutor:
             "created_via": "voice",
             "snooze_count": 0,
             "created_at": now_iso,
-        })
+        }
+        ref = self._reminders_ref().document(reminder_id)
+        await asyncio.to_thread(lambda: ref.set(data))
 
         return {
             "reminder_id": reminder_id,
@@ -124,12 +131,13 @@ class ToolExecutor:
     async def _list_reminders(self, inp: dict[str, Any]) -> ToolResult:
         status_filter = str(inp.get("status_filter", "pending"))
 
-        query = self._reminders_ref().order_by("trigger_at")
-        if status_filter != "all":
-            query = query.where("status", "==", status_filter)
+        def _fetch() -> list[dict]:
+            q = self._reminders_ref().order_by("trigger_at")
+            if status_filter != "all":
+                q = q.where("status", "==", status_filter)
+            return [{"reminder_id": d.id, **d.to_dict()} for d in q.stream()]
 
-        docs = query.stream()
-        reminders = [{"reminder_id": d.id, **d.to_dict()} for d in docs]
+        reminders = await asyncio.to_thread(_fetch)
         return {"reminders": reminders}
 
     async def _cancel_reminder(self, inp: dict[str, Any]) -> ToolResult:
@@ -138,10 +146,11 @@ class ToolExecutor:
             raise ValueError("reminder_id is required")
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        self._reminders_ref().document(reminder_id).update({
+        ref = self._reminders_ref().document(reminder_id)
+        await asyncio.to_thread(lambda: ref.update({
             "status": "dismissed",
             "dismissed_at": now_iso,
-        })
+        }))
         return {"reminder_id": reminder_id, "status": "dismissed"}
 
     # ─── Calendar ─────────────────────────────────────────────────────────────
@@ -151,12 +160,6 @@ class ToolExecutor:
         start_time = str(inp.get("start_time", "")).strip()
         if not title or not start_time:
             raise ValueError("title and start_time are required")
-
-        connector = GoogleCalendarConnector(self._user_id)
-        status = connector.get_status()
-        if not status.get("enabled"):
-            return {"configured": False, "message": "Google Calendar is not configured."}
-        cal = connector.calendar_client()
 
         end_time = inp.get("end_time")
         if not end_time:
@@ -173,24 +176,35 @@ class ToolExecutor:
         if inp.get("location"):
             body["location"] = inp["location"]
 
-        event = cal.events().insert(calendarId="primary", body=body).execute()
-        connector.cache_api_events([event])
-        return {
-            "configured": True,
-            "event_id": event.get("id"),
-            "html_link": event.get("htmlLink"),
-            "status": event.get("status"),
-        }
+        def _create() -> ToolResult:
+            connector = GoogleCalendarConnector(self._user_id)
+            status = connector.get_status()
+            if not status.get("enabled"):
+                return {"configured": False, "message": "Google Calendar is not configured."}
+            cal = connector.calendar_client()
+            event = cal.events().insert(calendarId="primary", body=body).execute()
+            connector.cache_api_events([event])
+            return {
+                "configured": True,
+                "event_id": event.get("id"),
+                "html_link": event.get("htmlLink"),
+                "status": event.get("status"),
+            }
+
+        return await asyncio.to_thread(_create)
 
     async def _get_upcoming_events(self, inp: dict[str, Any]) -> ToolResult:
-        connector = GoogleCalendarConnector(self._user_id)
-        return connector.query_events(
-            range_name=str(inp.get("range", "")).strip() or None,
-            start_time=str(inp.get("start_time", "")).strip() or None,
-            end_time=str(inp.get("end_time", "")).strip() or None,
-            limit=int(inp.get("limit", 10) or 10),
-            hours_ahead=int(inp.get("hours_ahead", 24) or 24),
-        )
+        def _fetch() -> ToolResult:
+            connector = GoogleCalendarConnector(self._user_id)
+            return connector.query_events(
+                range_name=str(inp.get("range", "")).strip() or None,
+                start_time=str(inp.get("start_time", "")).strip() or None,
+                end_time=str(inp.get("end_time", "")).strip() or None,
+                limit=int(inp.get("limit", 10) or 10),
+                hours_ahead=int(inp.get("hours_ahead", 24) or 24),
+            )
+
+        return await asyncio.to_thread(_fetch)
 
     # ─── Memory ───────────────────────────────────────────────────────────────
 
@@ -204,27 +218,29 @@ class ToolExecutor:
 
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        # Check for existing doc with same key
-        existing = self._memories_ref().where("key", "==", key).limit(1).stream()
-        existing_docs = list(existing)
-
-        if existing_docs:
-            memory_id = existing_docs[0].id
-            self._memories_ref().document(memory_id).set(
-                {"key": key, "value": value, "category": category, "updated_at": now_iso},
-                merge=True,
+        def _upsert() -> str:
+            existing = list(
+                self._memories_ref().where("key", "==", key).limit(1).stream()
             )
-        else:
-            memory_id = str(uuid4())
-            self._memories_ref().document(memory_id).set({
-                "key": key,
-                "value": value,
-                "category": category,
-                "source": "voice",
-                "created_at": now_iso,
-                "updated_at": now_iso,
-            })
+            if existing:
+                memory_id = existing[0].id
+                self._memories_ref().document(memory_id).set(
+                    {"key": key, "value": value, "category": category, "updated_at": now_iso},
+                    merge=True,
+                )
+            else:
+                memory_id = str(uuid4())
+                self._memories_ref().document(memory_id).set({
+                    "key": key,
+                    "value": value,
+                    "category": category,
+                    "source": "voice",
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                })
+            return memory_id
 
+        memory_id = await asyncio.to_thread(_upsert)
         return {"memory_id": memory_id, "key": key, "value": value, "category": category}
 
     async def _query_memory(self, inp: dict[str, Any]) -> ToolResult:
@@ -234,20 +250,21 @@ class ToolExecutor:
         if not query_str:
             raise ValueError("query is required")
 
-        mem_query = self._memories_ref()
-        if category_filter != "all":
-            mem_query = mem_query.where("category", "==", category_filter)
+        def _search() -> list[dict]:
+            q = self._memories_ref()
+            if category_filter != "all":
+                q = q.where("category", "==", category_filter)
+            matches: list[dict] = []
+            for doc in q.stream():
+                data = doc.to_dict() or {}
+                haystack = f"{data.get('key', '')} {data.get('value', '')}".lower()
+                if query_str in haystack:
+                    matches.append({"memory_id": doc.id, **data})
+                if len(matches) >= 10:
+                    break
+            return matches
 
-        docs = mem_query.stream()
-        matches = []
-        for doc in docs:
-            data = doc.to_dict() or {}
-            haystack = f"{data.get('key', '')} {data.get('value', '')}".lower()
-            if query_str in haystack:
-                matches.append({"memory_id": doc.id, **data})
-            if len(matches) >= 10:
-                break
-
+        matches = await asyncio.to_thread(_search)
         return {"matches": matches}
 
     # ─── Nutrition ────────────────────────────────────────────────────────────
@@ -280,7 +297,7 @@ class ToolExecutor:
 
         log_id = str(uuid4())
         now_iso = datetime.now(timezone.utc).isoformat()
-        self._nutrition_logs_ref().document(log_id).set({
+        log_data = {
             "ocr_text": ocr_text,
             "occasion": inp.get("occasion"),
             "quantity": quantity,
@@ -289,7 +306,9 @@ class ToolExecutor:
             "concerns": concerns,
             "recommendation": recommendation,
             "timestamp": now_iso,
-        })
+        }
+        ref = self._nutrition_logs_ref().document(log_id)
+        await asyncio.to_thread(lambda: ref.set(log_data))
 
         return {
             "nutrition_log_id": log_id,
@@ -312,12 +331,17 @@ class ToolExecutor:
         context: dict[str, Any] = {"user_id": self._user_id}
 
         if include_memories:
-            docs = self._memories_ref().stream()
-            context["memories"] = [{"memory_id": d.id, **d.to_dict()} for d in docs]
+            context["memories"] = await asyncio.to_thread(
+                lambda: [{"memory_id": d.id, **d.to_dict()} for d in self._memories_ref().stream()]
+            )
 
         if include_reminders:
-            docs = self._reminders_ref().where("status", "==", "pending").stream()
-            context["reminders"] = [{"reminder_id": d.id, **d.to_dict()} for d in docs]
+            context["reminders"] = await asyncio.to_thread(
+                lambda: [
+                    {"reminder_id": d.id, **d.to_dict()}
+                    for d in self._reminders_ref().where("status", "==", "pending").stream()
+                ]
+            )
 
         if include_events:
             result = await self._get_upcoming_events({"hours_ahead": 24})
@@ -329,7 +353,10 @@ class ToolExecutor:
 # ─── Standalone Firestore helpers (used by scheduler) ────────────────────────
 
 def fetch_due_reminders() -> list[dict[str, Any]]:
-    """Query all users' pending reminders that are due now."""
+    """Query all users' pending reminders that are due now.
+
+    Intentionally synchronous — called via asyncio.to_thread from the scheduler.
+    """
     db = admin_firestore()
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -351,6 +378,7 @@ def fetch_due_reminders() -> list[dict[str, Any]]:
 
 
 def mark_reminder_fired(user_id: str, reminder_id: str) -> None:
+    """Intentionally synchronous — called via asyncio.to_thread from the scheduler."""
     db = admin_firestore()
     now_iso = datetime.now(timezone.utc).isoformat()
     db.collection("users").document(user_id).collection("reminders").document(reminder_id).update({

@@ -18,6 +18,7 @@ Lambda (REST handlers only):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -38,10 +39,12 @@ from .handlers.connectors import (
     google_calendar_webhook,
     sync_google_calendar,
 )
+from .handlers.dietary_profile import handle_get_dietary_profile, handle_save_dietary_profile
 from .handlers.notification_reply import handle_notification_reply_request
-from .handlers.nutrition import handle_nutrition_analyze_request
+from .handlers.nutrition import handle_nutrition_analyze_request, handle_nutrition_scan_request
 from .handlers.scheduler import handle_scheduler_tick
 from .lib.logger import logger
+from .services.gemini_client import get_gemini_client
 from .services.request_auth import decode_firebase_claims
 from .voice_gateway.ws_handler import voice_stream_handler
 
@@ -152,11 +155,34 @@ async def chat_endpoint(request: Request) -> JSONResponse:
     return _lambda_response(result)
 
 
+@app.post("/nutrition/scan")
+async def nutrition_scan_endpoint(request: Request) -> JSONResponse:
+    body = await request.body()
+    event = _to_lambda_event(request, body)
+    result = await handle_nutrition_scan_request(event)
+    return _lambda_response(result)
+
+
 @app.post("/nutrition/analyze")
 async def nutrition_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
     event = _to_lambda_event(request, body)
     result = await handle_nutrition_analyze_request(event)
+    return _lambda_response(result)
+
+
+@app.get("/nutrition/profile")
+async def nutrition_profile_get_endpoint(request: Request) -> JSONResponse:
+    event = _to_lambda_event(request, b"")
+    result = await handle_get_dietary_profile(event)
+    return _lambda_response(result)
+
+
+@app.post("/nutrition/profile")
+async def nutrition_profile_save_endpoint(request: Request) -> JSONResponse:
+    body = await request.body()
+    event = _to_lambda_event(request, body)
+    result = await handle_save_dietary_profile(event)
     return _lambda_response(result)
 
 
@@ -210,6 +236,9 @@ def _check_env() -> None:
         "BEDROCK_MODEL": settings.BEDROCK_SONIC_MODEL_ID,
         "GOOGLE_CALENDAR": settings.google_calendar_configured,
         "GOOGLE_CALENDAR_WEBHOOK_URL": bool(settings.GOOGLE_CALENDAR_WEBHOOK_URL),
+        "VERTEX_AI_PROJECT": settings.VERTEX_AI_PROJECT,
+        "VERTEX_AI_LOCATION": settings.VERTEX_AI_LOCATION,
+        "GEMINI_MODEL": settings.GEMINI_MODEL,
         "ENV": settings.ENV,
     }
 
@@ -238,6 +267,16 @@ def _check_env() -> None:
 @app.on_event("startup")
 async def on_startup() -> None:
     _check_env()
+    # Pre-warm Vertex AI / Gemini so the first nutrition scan doesn't stall the
+    # event loop during SDK initialisation (vertexai.init makes gRPC + metadata
+    # service calls that can take 1-5 s on a cold instance).
+    try:
+        await asyncio.to_thread(get_gemini_client)
+        logger.info("Gemini client pre-warmed")
+    except Exception as exc:
+        logger.warn("Gemini client pre-warm failed — nutrition scan will init lazily", {
+            "error": str(exc),
+        })
 
 
 # ─── Lambda adapter ───────────────────────────────────────────────────────────

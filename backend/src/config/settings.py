@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     GOOGLE_CALENDAR_CHANNEL_RENEWAL_LEAD_SECONDS: int = 21600
     CALENDAR_SYNC_STALE_MINUTES: int = 5
 
+    # Vertex AI (Gemini 2.0 Flash — nutrition VLM)
+    VERTEX_AI_PROJECT: str = "juno-2ea45"
+    VERTEX_AI_LOCATION: str = "us-central1"
+    GEMINI_MODEL: str = "gemini-2.0-flash-001"
+    NUTRITION_SCAN_CONFIDENCE_THRESHOLD: float = 0.85
+
     # Chat history — number of prior turns forwarded to Claude for context.
     # 10 messages ≈ 1k tokens per request. Tune via env var CHAT_HISTORY_WINDOW.
     CHAT_HISTORY_WINDOW: int = 10

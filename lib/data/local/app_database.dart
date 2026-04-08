@@ -3,21 +3,19 @@ import 'package:drift_flutter/drift_flutter.dart';
 
 part 'app_database.g.dart';
 
-// ── Tables ───────────────────────────────────────────────────────────────────
-
-/// One row per app-launch conversation. Title is set lazily from the first
-/// user message so the session list can show a meaningful label.
 class ChatSessions extends Table {
   TextColumn get id => text()();
   DateTimeColumn get startedAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
   TextColumn get title => text().nullable()();
+  DateTimeColumn get lastMessageAt => dateTime().nullable()();
+  TextColumn get lastMessagePreview => text().nullable()();
+  IntColumn get messageCount => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};
 }
 
-/// Individual messages belonging to a session.
-/// Cascade-deletes when the parent session is removed.
 class ChatMessages extends Table {
   TextColumn get id => text()();
   TextColumn get sessionId => text().references(
@@ -25,29 +23,107 @@ class ChatMessages extends Table {
         #id,
         onDelete: KeyAction.cascade,
       )();
-
-  /// The message body. Named 'content' to avoid conflict with Table.text().
   TextColumn get content => text()();
   BoolColumn get isUser => boolean()();
-
-  /// 'text' | 'voice' — mirrors ChatMessageChannel.name
   TextColumn get channel => text()();
   DateTimeColumn get timestamp => dateTime()();
+  IntColumn get sequence => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};
 }
 
-// ── Database ─────────────────────────────────────────────────────────────────
+class ChatSyncJobs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get userId => text()();
+  TextColumn get sessionId => text()();
+  TextColumn get messageId => text().nullable()();
+  TextColumn get jobType => text()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get nextAttemptAt => dateTime().withDefault(currentDateAndTime)();
+  IntColumn get attemptCount => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+}
 
-@DriftDatabase(tables: [ChatSessions, ChatMessages])
+@DriftDatabase(tables: [ChatSessions, ChatMessages, ChatSyncJobs])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
-  /// SQLite WAL mode is enabled by drift_flutter by default; no extra setup.
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) async {
+          await m.createAll();
+        },
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // updatedAt has a non-constant default (currentDateAndTime) which
+            // SQLite rejects in ALTER TABLE ADD COLUMN. Use a literal 0; the
+            // UPDATE statement below immediately sets the correct value.
+            await customStatement(
+              'ALTER TABLE "chat_sessions" ADD COLUMN "updated_at" INTEGER NOT NULL DEFAULT 0',
+            );
+            await m.addColumn(chatSessions, chatSessions.lastMessageAt);
+            await m.addColumn(chatSessions, chatSessions.lastMessagePreview);
+            await m.addColumn(chatSessions, chatSessions.messageCount);
+            await m.addColumn(chatMessages, chatMessages.sequence);
+            await m.createTable(chatSyncJobs);
+
+            await customStatement('''
+              UPDATE chat_messages
+              SET sequence = (
+                SELECT COUNT(*)
+                FROM chat_messages AS earlier
+                WHERE earlier.session_id = chat_messages.session_id
+                  AND (
+                    earlier.timestamp < chat_messages.timestamp
+                    OR (
+                      earlier.timestamp = chat_messages.timestamp
+                      AND earlier.id <= chat_messages.id
+                    )
+                  )
+              )
+            ''');
+
+            await customStatement('''
+              UPDATE chat_sessions
+              SET
+                message_count = COALESCE((
+                  SELECT MAX(sequence)
+                  FROM chat_messages
+                  WHERE session_id = chat_sessions.id
+                ), 0),
+                last_message_at = (
+                  SELECT timestamp
+                  FROM chat_messages
+                  WHERE session_id = chat_sessions.id
+                  ORDER BY sequence DESC
+                  LIMIT 1
+                ),
+                last_message_preview = (
+                  SELECT substr(content, 1, 160)
+                  FROM chat_messages
+                  WHERE session_id = chat_sessions.id
+                  ORDER BY sequence DESC
+                  LIMIT 1
+                ),
+                updated_at = COALESCE((
+                  SELECT timestamp
+                  FROM chat_messages
+                  WHERE session_id = chat_sessions.id
+                  ORDER BY sequence DESC
+                  LIMIT 1
+                ), started_at)
+            ''');
+          }
+        },
+        beforeOpen: (details) async {
+          await customStatement('PRAGMA foreign_keys = ON');
+        },
+      );
+
   static QueryExecutor _openConnection() {
     return driftDatabase(name: 'juno_chat');
   }

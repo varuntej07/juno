@@ -32,42 +32,47 @@ class ApiClient {
 
   Future<Result<T>> get<T>(
     String path,
-    T Function(Map<String, dynamic>) fromJson,
-  ) =>
-      _execute('GET', path, null, fromJson);
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? timeout,
+  }) =>
+      _execute('GET', path, null, fromJson, timeout: timeout);
 
   Future<Result<T>> post<T>(
     String path,
     Map<String, dynamic> body,
-    T Function(Map<String, dynamic>) fromJson,
-  ) =>
-      _execute('POST', path, body, fromJson);
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? timeout,
+  }) =>
+      _execute('POST', path, body, fromJson, timeout: timeout);
 
   Future<Result<T>> put<T>(
     String path,
     Map<String, dynamic> body,
-    T Function(Map<String, dynamic>) fromJson,
-  ) =>
-      _execute('PUT', path, body, fromJson);
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? timeout,
+  }) =>
+      _execute('PUT', path, body, fromJson, timeout: timeout);
 
   Future<Result<T>> delete<T>(
     String path,
-    T Function(Map<String, dynamic>) fromJson,
-  ) =>
-      _execute('DELETE', path, null, fromJson);
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? timeout,
+  }) =>
+      _execute('DELETE', path, null, fromJson, timeout: timeout);
 
   Future<Result<T>> _execute<T>(
     String method,
     String path,
     Map<String, dynamic>? body,
-    T Function(Map<String, dynamic>) fromJson,
-  ) async {
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? timeout,
+  }) async {
     if (!await _connectivity.isConnected) {
       return Result.failure(AppException.networkUnavailable());
     }
 
     return LatencyTracker.track('api_${method.toLowerCase()}_$path', () async {
-      return _executeWithRetry(method, path, body, fromJson, 0);
+      return _executeWithRetry(method, path, body, fromJson, 0, timeout: timeout);
     });
   }
 
@@ -76,29 +81,30 @@ class ApiClient {
     String path,
     Map<String, dynamic>? body,
     T Function(Map<String, dynamic>) fromJson,
-    int attempt,
-  ) async {
+    int attempt, {
+    Duration? timeout,
+  }) async {
     final url = Uri.parse('${Environment.current.apiBaseUrl}$path');
     final headers = await _headers();
     final stopwatch = Stopwatch()..start();
+    final effectiveTimeout = timeout ?? AppConstants.apiReadTimeout;
 
     try {
       http.Response response;
-      final timeout = AppConstants.apiReadTimeout;
 
       switch (method) {
         case 'GET':
-          response = await http.get(url, headers: headers).timeout(timeout);
+          response = await http.get(url, headers: headers).timeout(effectiveTimeout);
         case 'POST':
           response = await http
               .post(url, headers: headers, body: jsonEncode(body))
-              .timeout(timeout);
+              .timeout(effectiveTimeout);
         case 'PUT':
           response = await http
               .put(url, headers: headers, body: jsonEncode(body))
-              .timeout(timeout);
+              .timeout(effectiveTimeout);
         case 'DELETE':
-          response = await http.delete(url, headers: headers).timeout(timeout);
+          response = await http.delete(url, headers: headers).timeout(effectiveTimeout);
         default:
           throw UnsupportedError('Unsupported HTTP method: $method');
       }
@@ -118,7 +124,7 @@ class ApiClient {
 
       if (networkEx.isRetryable && attempt < AppConstants.maxApiRetries - 1) {
         await _backoffDelay(attempt);
-        return _executeWithRetry(method, path, body, fromJson, attempt + 1);
+        return _executeWithRetry(method, path, body, fromJson, attempt + 1, timeout: timeout);
       }
 
       return Result.failure(networkEx);
@@ -129,7 +135,7 @@ class ApiClient {
     } on HttpException catch (e) {
       if (attempt < AppConstants.maxApiRetries - 1) {
         await _backoffDelay(attempt);
-        return _executeWithRetry(method, path, body, fromJson, attempt + 1);
+        return _executeWithRetry(method, path, body, fromJson, attempt + 1, timeout: timeout);
       }
       return Result.failure(AppException.unexpected(e.message, error: e));
     } catch (e, st) {

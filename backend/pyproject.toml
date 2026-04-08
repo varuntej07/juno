@@ -31,6 +31,9 @@ dependencies = [
     "google-auth>=2.40",
     "google-auth-httplib2>=0.2",
 
+    # Google Gen AI SDK (Gemini via Vertex AI backend — nutrition VLM)
+    "google-genai>=1.0",
+
     # Lambda adapter (for REST handlers deployed to Lambda)
     "mangum>=0.19",
 ]

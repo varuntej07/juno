@@ -1,0 +1,355 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:drift/drift.dart';
+import 'package:firebase_core/firebase_core.dart';
+
+import '../../core/logging/app_logger.dart';
+import '../local/app_database.dart';
+
+enum ChatSyncJobType { sessionUpsert, messageUpsert }
+
+class ChatBackupService {
+  final AppDatabase _db;
+  final FirebaseFirestore? _firestore;
+
+  bool _isProcessing = false;
+  Timer? _retryTimer;
+
+  ChatBackupService({
+    required AppDatabase db,
+    FirebaseFirestore? firestore,
+  })  : _db = db,
+        _firestore = firestore ?? _resolveFirestore();
+
+  static FirebaseFirestore? _resolveFirestore() {
+    try {
+      if (Firebase.apps.isEmpty) return null;
+      return FirebaseFirestore.instance;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> enqueueMessageUpsert({
+    required String userId,
+    required String sessionId,
+    required String messageId,
+  }) async {
+    await _db.into(_db.chatSyncJobs).insert(
+          ChatSyncJobsCompanion.insert(
+            userId: userId,
+            sessionId: sessionId,
+            messageId: Value(messageId),
+            jobType: ChatSyncJobType.messageUpsert.name,
+          ),
+        );
+    unawaited(processPendingJobs(userId: userId));
+  }
+
+  Future<void> enqueueSessionUpsert({
+    required String userId,
+    required String sessionId,
+  }) async {
+    await _db.into(_db.chatSyncJobs).insert(
+          ChatSyncJobsCompanion.insert(
+            userId: userId,
+            sessionId: sessionId,
+            jobType: ChatSyncJobType.sessionUpsert.name,
+          ),
+        );
+    unawaited(processPendingJobs(userId: userId));
+  }
+
+  Future<void> processPendingJobs({String? userId}) async {
+    final firestore = _firestore;
+    if (firestore == null || _isProcessing) return;
+
+    _retryTimer?.cancel();
+    _isProcessing = true;
+
+    try {
+      while (true) {
+        final job = await _nextDueJob(userId: userId);
+        if (job == null) {
+          await _scheduleNextRetry(userId: userId);
+          break;
+        }
+
+        final processed = await _processJob(job, firestore);
+        if (processed) {
+          await (_db.delete(_db.chatSyncJobs)..where((t) => t.id.equals(job.id))).go();
+          continue;
+        }
+
+        await _scheduleNextRetry(userId: userId);
+        break;
+      }
+    } finally {
+      _isProcessing = false;
+    }
+  }
+
+  Future<bool> restoreFromBackupIfLocalEmpty(String userId) async {
+    final firestore = _firestore;
+    if (userId.isEmpty || firestore == null) {
+      return false;
+    }
+
+    if (await _localSessionCount() > 0) {
+      return false;
+    }
+
+    try {
+      final sessionsSnapshot = await firestore
+          .collection('users')
+          .doc(userId)
+          .collection('chat_sessions')
+          .orderBy('updated_at', descending: true)
+          .get();
+
+      if (sessionsSnapshot.docs.isEmpty) {
+        return false;
+      }
+
+      final restoredSessions = <ChatSessionsCompanion>[];
+      final restoredMessages = <ChatMessagesCompanion>[];
+
+      for (final sessionDoc in sessionsSnapshot.docs) {
+        final data = sessionDoc.data();
+        final startedAt = _toDateTime(data['started_at']) ?? DateTime.now();
+        final updatedAt = _toDateTime(data['updated_at']) ?? startedAt;
+        final lastMessageAt = _toDateTime(data['last_message_at']);
+        restoredSessions.add(
+          ChatSessionsCompanion.insert(
+            id: sessionDoc.id,
+            startedAt: startedAt,
+            updatedAt: Value(updatedAt),
+            title: Value(data['title'] as String?),
+            lastMessageAt: Value(lastMessageAt),
+            lastMessagePreview: Value(data['last_message_preview'] as String?),
+            messageCount: Value((data['message_count'] as num?)?.toInt() ?? 0),
+          ),
+        );
+
+        final messagesSnapshot = await sessionDoc.reference
+            .collection('messages')
+            .orderBy('sequence')
+            .get();
+
+        for (final messageDoc in messagesSnapshot.docs) {
+          final messageData = messageDoc.data();
+          restoredMessages.add(
+            ChatMessagesCompanion.insert(
+              id: messageDoc.id,
+              sessionId: sessionDoc.id,
+              content: (messageData['text'] as String?) ?? '',
+              isUser: (messageData['role'] as String?) == 'user',
+              channel: (messageData['channel'] as String?) ?? 'text',
+              timestamp: _toDateTime(messageData['created_at']) ?? startedAt,
+              sequence: Value((messageData['sequence'] as num?)?.toInt() ?? 0),
+            ),
+          );
+        }
+      }
+
+      if (await _localSessionCount() > 0) {
+        return false;
+      }
+
+      await _db.transaction(() async {
+        for (final session in restoredSessions) {
+          await _db.into(_db.chatSessions).insertOnConflictUpdate(session);
+        }
+        for (final message in restoredMessages) {
+          await _db.into(_db.chatMessages).insertOnConflictUpdate(message);
+        }
+      });
+
+      AppLogger.info(
+        'Restored chat history from Firestore backup',
+        tag: 'ChatBackupService',
+        metadata: {
+          'userId': userId,
+          'sessionCount': restoredSessions.length,
+          'messageCount': restoredMessages.length,
+        },
+      );
+      return true;
+    } catch (e, st) {
+      AppLogger.error(
+        'Failed to restore chat backup',
+        error: e,
+        stackTrace: st,
+        tag: 'ChatBackupService',
+        metadata: {'userId': userId},
+      );
+      return false;
+    }
+  }
+
+  Future<bool> _processJob(
+    ChatSyncJob job,
+    FirebaseFirestore firestore,
+  ) async {
+    try {
+      final session = await _sessionById(job.sessionId);
+      if (session == null) {
+        return true;
+      }
+
+      final sessionRef = firestore
+          .collection('users')
+          .doc(job.userId)
+          .collection('chat_sessions')
+          .doc(job.sessionId);
+
+      final batch = firestore.batch();
+      batch.set(sessionRef, _sessionDoc(session), SetOptions(merge: true));
+
+      if (job.jobType == ChatSyncJobType.messageUpsert.name) {
+        final messageId = job.messageId;
+        if (messageId == null) {
+          return true;
+        }
+
+        final message = await _messageById(messageId);
+        if (message == null) {
+          return true;
+        }
+
+        final messageRef = sessionRef.collection('messages').doc(message.id);
+        batch.set(messageRef, _messageDoc(message), SetOptions(merge: true));
+      }
+
+      await batch.commit();
+      return true;
+    } catch (e, st) {
+      await _markJobFailed(job, e);
+      AppLogger.error(
+        'Chat backup sync failed',
+        error: e,
+        stackTrace: st,
+        tag: 'ChatBackupService',
+        metadata: {
+          'jobId': job.id,
+          'jobType': job.jobType,
+          'sessionId': job.sessionId,
+          'messageId': job.messageId,
+          'userId': job.userId,
+        },
+      );
+      return false;
+    }
+  }
+
+  Map<String, dynamic> _sessionDoc(ChatSession session) {
+    return {
+      'title': session.title,
+      'started_at': Timestamp.fromDate(session.startedAt.toUtc()),
+      'updated_at': Timestamp.fromDate(session.updatedAt.toUtc()),
+      if (session.lastMessageAt != null)
+        'last_message_at': Timestamp.fromDate(session.lastMessageAt!.toUtc()),
+      if (session.lastMessagePreview != null)
+        'last_message_preview': session.lastMessagePreview,
+      'message_count': session.messageCount,
+    };
+  }
+
+  Map<String, dynamic> _messageDoc(ChatMessage message) {
+    return {
+      'session_id': message.sessionId,
+      'role': message.isUser ? 'user' : 'assistant',
+      'text': message.content,
+      'channel': message.channel,
+      'created_at': Timestamp.fromDate(message.timestamp.toUtc()),
+      'sequence': message.sequence,
+    };
+  }
+
+  Future<void> _markJobFailed(ChatSyncJob job, Object error) async {
+    final nextAttemptCount = job.attemptCount + 1;
+    final delay = _retryDelay(nextAttemptCount);
+    final errorText = error.toString();
+    final truncatedError = errorText.length > 500
+        ? errorText.substring(0, 500)
+        : errorText;
+
+    await (_db.update(_db.chatSyncJobs)..where((t) => t.id.equals(job.id))).write(
+      ChatSyncJobsCompanion(
+        attemptCount: Value(nextAttemptCount),
+        nextAttemptAt: Value(DateTime.now().add(delay)),
+        lastError: Value(truncatedError),
+      ),
+    );
+  }
+
+  Duration _retryDelay(int attemptCount) {
+    final seconds = math.min(60, 1 << math.min(attemptCount, 6));
+    return Duration(seconds: seconds);
+  }
+
+  Future<ChatSyncJob?> _nextDueJob({String? userId}) {
+    final now = DateTime.now();
+    final query = _db.select(_db.chatSyncJobs)
+      ..where(
+        (t) => userId == null || userId.isEmpty
+            ? t.nextAttemptAt.isSmallerOrEqualValue(now)
+            : t.nextAttemptAt.isSmallerOrEqualValue(now) & t.userId.equals(userId),
+      )
+      ..orderBy([
+        (t) => OrderingTerm.asc(t.nextAttemptAt),
+        (t) => OrderingTerm.asc(t.id),
+      ])
+      ..limit(1);
+    return query.getSingleOrNull();
+  }
+
+  Future<ChatSyncJob?> _nextScheduledJob({String? userId}) {
+    final query = _db.select(_db.chatSyncJobs)
+      ..where(
+        (t) => userId == null || userId.isEmpty ? const Constant(true) : t.userId.equals(userId),
+      )
+      ..orderBy([
+        (t) => OrderingTerm.asc(t.nextAttemptAt),
+        (t) => OrderingTerm.asc(t.id),
+      ])
+      ..limit(1);
+    return query.getSingleOrNull();
+  }
+
+  Future<void> _scheduleNextRetry({String? userId}) async {
+    final nextJob = await _nextScheduledJob(userId: userId);
+    if (nextJob == null) return;
+
+    final delay = nextJob.nextAttemptAt.difference(DateTime.now());
+    _retryTimer?.cancel();
+    _retryTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () => unawaited(processPendingJobs(userId: userId)),
+    );
+  }
+
+  Future<ChatSession?> _sessionById(String sessionId) {
+    return (_db.select(_db.chatSessions)..where((t) => t.id.equals(sessionId))).getSingleOrNull();
+  }
+
+  Future<ChatMessage?> _messageById(String messageId) {
+    return (_db.select(_db.chatMessages)..where((t) => t.id.equals(messageId))).getSingleOrNull();
+  }
+
+  Future<int> _localSessionCount() async {
+    final countExpression = _db.chatSessions.id.count();
+    final query = _db.selectOnly(_db.chatSessions)..addColumns([countExpression]);
+    final row = await query.getSingle();
+    return row.read(countExpression) ?? 0;
+  }
+
+  DateTime? _toDateTime(Object? raw) {
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
+  }
+}

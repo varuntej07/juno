@@ -29,6 +29,18 @@ class $ChatSessionsTable extends ChatSessions
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
   static const VerificationMeta _titleMeta = const VerificationMeta('title');
   @override
   late final GeneratedColumn<String> title = GeneratedColumn<String>(
@@ -38,8 +50,51 @@ class $ChatSessionsTable extends ChatSessions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _lastMessageAtMeta = const VerificationMeta(
+    'lastMessageAt',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, startedAt, title];
+  late final GeneratedColumn<DateTime> lastMessageAt =
+      GeneratedColumn<DateTime>(
+        'last_message_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _lastMessagePreviewMeta =
+      const VerificationMeta('lastMessagePreview');
+  @override
+  late final GeneratedColumn<String> lastMessagePreview =
+      GeneratedColumn<String>(
+        'last_message_preview',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _messageCountMeta = const VerificationMeta(
+    'messageCount',
+  );
+  @override
+  late final GeneratedColumn<int> messageCount = GeneratedColumn<int>(
+    'message_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    startedAt,
+    updatedAt,
+    title,
+    lastMessageAt,
+    lastMessagePreview,
+    messageCount,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -65,10 +120,43 @@ class $ChatSessionsTable extends ChatSessions
     } else if (isInserting) {
       context.missing(_startedAtMeta);
     }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
     if (data.containsKey('title')) {
       context.handle(
         _titleMeta,
         title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('last_message_at')) {
+      context.handle(
+        _lastMessageAtMeta,
+        lastMessageAt.isAcceptableOrUnknown(
+          data['last_message_at']!,
+          _lastMessageAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_message_preview')) {
+      context.handle(
+        _lastMessagePreviewMeta,
+        lastMessagePreview.isAcceptableOrUnknown(
+          data['last_message_preview']!,
+          _lastMessagePreviewMeta,
+        ),
+      );
+    }
+    if (data.containsKey('message_count')) {
+      context.handle(
+        _messageCountMeta,
+        messageCount.isAcceptableOrUnknown(
+          data['message_count']!,
+          _messageCountMeta,
+        ),
       );
     }
     return context;
@@ -88,10 +176,26 @@ class $ChatSessionsTable extends ChatSessions
         DriftSqlType.dateTime,
         data['${effectivePrefix}started_at'],
       )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
       title: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}title'],
       ),
+      lastMessageAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_message_at'],
+      ),
+      lastMessagePreview: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_message_preview'],
+      ),
+      messageCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}message_count'],
+      )!,
     );
   }
 
@@ -104,16 +208,36 @@ class $ChatSessionsTable extends ChatSessions
 class ChatSession extends DataClass implements Insertable<ChatSession> {
   final String id;
   final DateTime startedAt;
+  final DateTime updatedAt;
   final String? title;
-  const ChatSession({required this.id, required this.startedAt, this.title});
+  final DateTime? lastMessageAt;
+  final String? lastMessagePreview;
+  final int messageCount;
+  const ChatSession({
+    required this.id,
+    required this.startedAt,
+    required this.updatedAt,
+    this.title,
+    this.lastMessageAt,
+    this.lastMessagePreview,
+    required this.messageCount,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['started_at'] = Variable<DateTime>(startedAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
     if (!nullToAbsent || title != null) {
       map['title'] = Variable<String>(title);
     }
+    if (!nullToAbsent || lastMessageAt != null) {
+      map['last_message_at'] = Variable<DateTime>(lastMessageAt);
+    }
+    if (!nullToAbsent || lastMessagePreview != null) {
+      map['last_message_preview'] = Variable<String>(lastMessagePreview);
+    }
+    map['message_count'] = Variable<int>(messageCount);
     return map;
   }
 
@@ -121,9 +245,17 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
     return ChatSessionsCompanion(
       id: Value(id),
       startedAt: Value(startedAt),
+      updatedAt: Value(updatedAt),
       title: title == null && nullToAbsent
           ? const Value.absent()
           : Value(title),
+      lastMessageAt: lastMessageAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastMessageAt),
+      lastMessagePreview: lastMessagePreview == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastMessagePreview),
+      messageCount: Value(messageCount),
     );
   }
 
@@ -135,7 +267,13 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
     return ChatSession(
       id: serializer.fromJson<String>(json['id']),
       startedAt: serializer.fromJson<DateTime>(json['startedAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       title: serializer.fromJson<String?>(json['title']),
+      lastMessageAt: serializer.fromJson<DateTime?>(json['lastMessageAt']),
+      lastMessagePreview: serializer.fromJson<String?>(
+        json['lastMessagePreview'],
+      ),
+      messageCount: serializer.fromJson<int>(json['messageCount']),
     );
   }
   @override
@@ -144,24 +282,50 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'startedAt': serializer.toJson<DateTime>(startedAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'title': serializer.toJson<String?>(title),
+      'lastMessageAt': serializer.toJson<DateTime?>(lastMessageAt),
+      'lastMessagePreview': serializer.toJson<String?>(lastMessagePreview),
+      'messageCount': serializer.toJson<int>(messageCount),
     };
   }
 
   ChatSession copyWith({
     String? id,
     DateTime? startedAt,
+    DateTime? updatedAt,
     Value<String?> title = const Value.absent(),
+    Value<DateTime?> lastMessageAt = const Value.absent(),
+    Value<String?> lastMessagePreview = const Value.absent(),
+    int? messageCount,
   }) => ChatSession(
     id: id ?? this.id,
     startedAt: startedAt ?? this.startedAt,
+    updatedAt: updatedAt ?? this.updatedAt,
     title: title.present ? title.value : this.title,
+    lastMessageAt: lastMessageAt.present
+        ? lastMessageAt.value
+        : this.lastMessageAt,
+    lastMessagePreview: lastMessagePreview.present
+        ? lastMessagePreview.value
+        : this.lastMessagePreview,
+    messageCount: messageCount ?? this.messageCount,
   );
   ChatSession copyWithCompanion(ChatSessionsCompanion data) {
     return ChatSession(
       id: data.id.present ? data.id.value : this.id,
       startedAt: data.startedAt.present ? data.startedAt.value : this.startedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       title: data.title.present ? data.title.value : this.title,
+      lastMessageAt: data.lastMessageAt.present
+          ? data.lastMessageAt.value
+          : this.lastMessageAt,
+      lastMessagePreview: data.lastMessagePreview.present
+          ? data.lastMessagePreview.value
+          : this.lastMessagePreview,
+      messageCount: data.messageCount.present
+          ? data.messageCount.value
+          : this.messageCount,
     );
   }
 
@@ -170,50 +334,87 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
     return (StringBuffer('ChatSession(')
           ..write('id: $id, ')
           ..write('startedAt: $startedAt, ')
-          ..write('title: $title')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('title: $title, ')
+          ..write('lastMessageAt: $lastMessageAt, ')
+          ..write('lastMessagePreview: $lastMessagePreview, ')
+          ..write('messageCount: $messageCount')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, startedAt, title);
+  int get hashCode => Object.hash(
+    id,
+    startedAt,
+    updatedAt,
+    title,
+    lastMessageAt,
+    lastMessagePreview,
+    messageCount,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ChatSession &&
           other.id == this.id &&
           other.startedAt == this.startedAt &&
-          other.title == this.title);
+          other.updatedAt == this.updatedAt &&
+          other.title == this.title &&
+          other.lastMessageAt == this.lastMessageAt &&
+          other.lastMessagePreview == this.lastMessagePreview &&
+          other.messageCount == this.messageCount);
 }
 
 class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
   final Value<String> id;
   final Value<DateTime> startedAt;
+  final Value<DateTime> updatedAt;
   final Value<String?> title;
+  final Value<DateTime?> lastMessageAt;
+  final Value<String?> lastMessagePreview;
+  final Value<int> messageCount;
   final Value<int> rowid;
   const ChatSessionsCompanion({
     this.id = const Value.absent(),
     this.startedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.title = const Value.absent(),
+    this.lastMessageAt = const Value.absent(),
+    this.lastMessagePreview = const Value.absent(),
+    this.messageCount = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ChatSessionsCompanion.insert({
     required String id,
     required DateTime startedAt,
+    this.updatedAt = const Value.absent(),
     this.title = const Value.absent(),
+    this.lastMessageAt = const Value.absent(),
+    this.lastMessagePreview = const Value.absent(),
+    this.messageCount = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        startedAt = Value(startedAt);
   static Insertable<ChatSession> custom({
     Expression<String>? id,
     Expression<DateTime>? startedAt,
+    Expression<DateTime>? updatedAt,
     Expression<String>? title,
+    Expression<DateTime>? lastMessageAt,
+    Expression<String>? lastMessagePreview,
+    Expression<int>? messageCount,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (startedAt != null) 'started_at': startedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (title != null) 'title': title,
+      if (lastMessageAt != null) 'last_message_at': lastMessageAt,
+      if (lastMessagePreview != null)
+        'last_message_preview': lastMessagePreview,
+      if (messageCount != null) 'message_count': messageCount,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -221,13 +422,21 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
   ChatSessionsCompanion copyWith({
     Value<String>? id,
     Value<DateTime>? startedAt,
+    Value<DateTime>? updatedAt,
     Value<String?>? title,
+    Value<DateTime?>? lastMessageAt,
+    Value<String?>? lastMessagePreview,
+    Value<int>? messageCount,
     Value<int>? rowid,
   }) {
     return ChatSessionsCompanion(
       id: id ?? this.id,
       startedAt: startedAt ?? this.startedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       title: title ?? this.title,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
+      messageCount: messageCount ?? this.messageCount,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -241,8 +450,20 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
     if (startedAt.present) {
       map['started_at'] = Variable<DateTime>(startedAt.value);
     }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
+    }
+    if (lastMessageAt.present) {
+      map['last_message_at'] = Variable<DateTime>(lastMessageAt.value);
+    }
+    if (lastMessagePreview.present) {
+      map['last_message_preview'] = Variable<String>(lastMessagePreview.value);
+    }
+    if (messageCount.present) {
+      map['message_count'] = Variable<int>(messageCount.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -255,7 +476,11 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
     return (StringBuffer('ChatSessionsCompanion(')
           ..write('id: $id, ')
           ..write('startedAt: $startedAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('title: $title, ')
+          ..write('lastMessageAt: $lastMessageAt, ')
+          ..write('lastMessagePreview: $lastMessagePreview, ')
+          ..write('messageCount: $messageCount, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -336,6 +561,18 @@ class $ChatMessagesTable extends ChatMessages
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _sequenceMeta = const VerificationMeta(
+    'sequence',
+  );
+  @override
+  late final GeneratedColumn<int> sequence = GeneratedColumn<int>(
+    'sequence',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -344,6 +581,7 @@ class $ChatMessagesTable extends ChatMessages
     isUser,
     channel,
     timestamp,
+    sequence,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -402,6 +640,12 @@ class $ChatMessagesTable extends ChatMessages
     } else if (isInserting) {
       context.missing(_timestampMeta);
     }
+    if (data.containsKey('sequence')) {
+      context.handle(
+        _sequenceMeta,
+        sequence.isAcceptableOrUnknown(data['sequence']!, _sequenceMeta),
+      );
+    }
     return context;
   }
 
@@ -435,6 +679,10 @@ class $ChatMessagesTable extends ChatMessages
         DriftSqlType.dateTime,
         data['${effectivePrefix}timestamp'],
       )!,
+      sequence: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sequence'],
+      )!,
     );
   }
 
@@ -447,14 +695,11 @@ class $ChatMessagesTable extends ChatMessages
 class ChatMessage extends DataClass implements Insertable<ChatMessage> {
   final String id;
   final String sessionId;
-
-  /// The message body. Named 'content' to avoid conflict with Table.text().
   final String content;
   final bool isUser;
-
-  /// 'text' | 'voice' — mirrors ChatMessageChannel.name
   final String channel;
   final DateTime timestamp;
+  final int sequence;
   const ChatMessage({
     required this.id,
     required this.sessionId,
@@ -462,6 +707,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     required this.isUser,
     required this.channel,
     required this.timestamp,
+    required this.sequence,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -472,6 +718,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     map['is_user'] = Variable<bool>(isUser);
     map['channel'] = Variable<String>(channel);
     map['timestamp'] = Variable<DateTime>(timestamp);
+    map['sequence'] = Variable<int>(sequence);
     return map;
   }
 
@@ -483,6 +730,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       isUser: Value(isUser),
       channel: Value(channel),
       timestamp: Value(timestamp),
+      sequence: Value(sequence),
     );
   }
 
@@ -498,6 +746,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       isUser: serializer.fromJson<bool>(json['isUser']),
       channel: serializer.fromJson<String>(json['channel']),
       timestamp: serializer.fromJson<DateTime>(json['timestamp']),
+      sequence: serializer.fromJson<int>(json['sequence']),
     );
   }
   @override
@@ -510,6 +759,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       'isUser': serializer.toJson<bool>(isUser),
       'channel': serializer.toJson<String>(channel),
       'timestamp': serializer.toJson<DateTime>(timestamp),
+      'sequence': serializer.toJson<int>(sequence),
     };
   }
 
@@ -520,6 +770,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     bool? isUser,
     String? channel,
     DateTime? timestamp,
+    int? sequence,
   }) => ChatMessage(
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
@@ -527,6 +778,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     isUser: isUser ?? this.isUser,
     channel: channel ?? this.channel,
     timestamp: timestamp ?? this.timestamp,
+    sequence: sequence ?? this.sequence,
   );
   ChatMessage copyWithCompanion(ChatMessagesCompanion data) {
     return ChatMessage(
@@ -536,6 +788,7 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       isUser: data.isUser.present ? data.isUser.value : this.isUser,
       channel: data.channel.present ? data.channel.value : this.channel,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
+      sequence: data.sequence.present ? data.sequence.value : this.sequence,
     );
   }
 
@@ -547,14 +800,15 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
           ..write('content: $content, ')
           ..write('isUser: $isUser, ')
           ..write('channel: $channel, ')
-          ..write('timestamp: $timestamp')
+          ..write('timestamp: $timestamp, ')
+          ..write('sequence: $sequence')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode =>
-      Object.hash(id, sessionId, content, isUser, channel, timestamp);
+      Object.hash(id, sessionId, content, isUser, channel, timestamp, sequence);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -564,7 +818,8 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
           other.content == this.content &&
           other.isUser == this.isUser &&
           other.channel == this.channel &&
-          other.timestamp == this.timestamp);
+          other.timestamp == this.timestamp &&
+          other.sequence == this.sequence);
 }
 
 class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
@@ -574,6 +829,7 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
   final Value<bool> isUser;
   final Value<String> channel;
   final Value<DateTime> timestamp;
+  final Value<int> sequence;
   final Value<int> rowid;
   const ChatMessagesCompanion({
     this.id = const Value.absent(),
@@ -582,6 +838,7 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     this.isUser = const Value.absent(),
     this.channel = const Value.absent(),
     this.timestamp = const Value.absent(),
+    this.sequence = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ChatMessagesCompanion.insert({
@@ -591,6 +848,7 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     required bool isUser,
     required String channel,
     required DateTime timestamp,
+    this.sequence = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sessionId = Value(sessionId),
@@ -605,6 +863,7 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     Expression<bool>? isUser,
     Expression<String>? channel,
     Expression<DateTime>? timestamp,
+    Expression<int>? sequence,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -614,6 +873,7 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
       if (isUser != null) 'is_user': isUser,
       if (channel != null) 'channel': channel,
       if (timestamp != null) 'timestamp': timestamp,
+      if (sequence != null) 'sequence': sequence,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -625,6 +885,7 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     Value<bool>? isUser,
     Value<String>? channel,
     Value<DateTime>? timestamp,
+    Value<int>? sequence,
     Value<int>? rowid,
   }) {
     return ChatMessagesCompanion(
@@ -634,6 +895,7 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
       isUser: isUser ?? this.isUser,
       channel: channel ?? this.channel,
       timestamp: timestamp ?? this.timestamp,
+      sequence: sequence ?? this.sequence,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -659,6 +921,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     if (timestamp.present) {
       map['timestamp'] = Variable<DateTime>(timestamp.value);
     }
+    if (sequence.present) {
+      map['sequence'] = Variable<int>(sequence.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -674,7 +939,563 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
           ..write('isUser: $isUser, ')
           ..write('channel: $channel, ')
           ..write('timestamp: $timestamp, ')
+          ..write('sequence: $sequence, ')
           ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ChatSyncJobsTable extends ChatSyncJobs
+    with TableInfo<$ChatSyncJobsTable, ChatSyncJob> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ChatSyncJobsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _messageIdMeta = const VerificationMeta(
+    'messageId',
+  );
+  @override
+  late final GeneratedColumn<String> messageId = GeneratedColumn<String>(
+    'message_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _jobTypeMeta = const VerificationMeta(
+    'jobType',
+  );
+  @override
+  late final GeneratedColumn<String> jobType = GeneratedColumn<String>(
+    'job_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _nextAttemptAtMeta = const VerificationMeta(
+    'nextAttemptAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> nextAttemptAt =
+      GeneratedColumn<DateTime>(
+        'next_attempt_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+        defaultValue: currentDateAndTime,
+      );
+  static const VerificationMeta _attemptCountMeta = const VerificationMeta(
+    'attemptCount',
+  );
+  @override
+  late final GeneratedColumn<int> attemptCount = GeneratedColumn<int>(
+    'attempt_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastErrorMeta = const VerificationMeta(
+    'lastError',
+  );
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+    'last_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    sessionId,
+    messageId,
+    jobType,
+    createdAt,
+    nextAttemptAt,
+    attemptCount,
+    lastError,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'chat_sync_jobs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ChatSyncJob> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
+    if (data.containsKey('message_id')) {
+      context.handle(
+        _messageIdMeta,
+        messageId.isAcceptableOrUnknown(data['message_id']!, _messageIdMeta),
+      );
+    }
+    if (data.containsKey('job_type')) {
+      context.handle(
+        _jobTypeMeta,
+        jobType.isAcceptableOrUnknown(data['job_type']!, _jobTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jobTypeMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('next_attempt_at')) {
+      context.handle(
+        _nextAttemptAtMeta,
+        nextAttemptAt.isAcceptableOrUnknown(
+          data['next_attempt_at']!,
+          _nextAttemptAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('attempt_count')) {
+      context.handle(
+        _attemptCountMeta,
+        attemptCount.isAcceptableOrUnknown(
+          data['attempt_count']!,
+          _attemptCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(
+        _lastErrorMeta,
+        lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ChatSyncJob map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ChatSyncJob(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      )!,
+      messageId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}message_id'],
+      ),
+      jobType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}job_type'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      nextAttemptAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}next_attempt_at'],
+      )!,
+      attemptCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempt_count'],
+      )!,
+      lastError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_error'],
+      ),
+    );
+  }
+
+  @override
+  $ChatSyncJobsTable createAlias(String alias) {
+    return $ChatSyncJobsTable(attachedDatabase, alias);
+  }
+}
+
+class ChatSyncJob extends DataClass implements Insertable<ChatSyncJob> {
+  final int id;
+  final String userId;
+  final String sessionId;
+  final String? messageId;
+  final String jobType;
+  final DateTime createdAt;
+  final DateTime nextAttemptAt;
+  final int attemptCount;
+  final String? lastError;
+  const ChatSyncJob({
+    required this.id,
+    required this.userId,
+    required this.sessionId,
+    this.messageId,
+    required this.jobType,
+    required this.createdAt,
+    required this.nextAttemptAt,
+    required this.attemptCount,
+    this.lastError,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['session_id'] = Variable<String>(sessionId);
+    if (!nullToAbsent || messageId != null) {
+      map['message_id'] = Variable<String>(messageId);
+    }
+    map['job_type'] = Variable<String>(jobType);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['next_attempt_at'] = Variable<DateTime>(nextAttemptAt);
+    map['attempt_count'] = Variable<int>(attemptCount);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    return map;
+  }
+
+  ChatSyncJobsCompanion toCompanion(bool nullToAbsent) {
+    return ChatSyncJobsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      sessionId: Value(sessionId),
+      messageId: messageId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(messageId),
+      jobType: Value(jobType),
+      createdAt: Value(createdAt),
+      nextAttemptAt: Value(nextAttemptAt),
+      attemptCount: Value(attemptCount),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+    );
+  }
+
+  factory ChatSyncJob.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ChatSyncJob(
+      id: serializer.fromJson<int>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      sessionId: serializer.fromJson<String>(json['sessionId']),
+      messageId: serializer.fromJson<String?>(json['messageId']),
+      jobType: serializer.fromJson<String>(json['jobType']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      nextAttemptAt: serializer.fromJson<DateTime>(json['nextAttemptAt']),
+      attemptCount: serializer.fromJson<int>(json['attemptCount']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'userId': serializer.toJson<String>(userId),
+      'sessionId': serializer.toJson<String>(sessionId),
+      'messageId': serializer.toJson<String?>(messageId),
+      'jobType': serializer.toJson<String>(jobType),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'nextAttemptAt': serializer.toJson<DateTime>(nextAttemptAt),
+      'attemptCount': serializer.toJson<int>(attemptCount),
+      'lastError': serializer.toJson<String?>(lastError),
+    };
+  }
+
+  ChatSyncJob copyWith({
+    int? id,
+    String? userId,
+    String? sessionId,
+    Value<String?> messageId = const Value.absent(),
+    String? jobType,
+    DateTime? createdAt,
+    DateTime? nextAttemptAt,
+    int? attemptCount,
+    Value<String?> lastError = const Value.absent(),
+  }) => ChatSyncJob(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    sessionId: sessionId ?? this.sessionId,
+    messageId: messageId.present ? messageId.value : this.messageId,
+    jobType: jobType ?? this.jobType,
+    createdAt: createdAt ?? this.createdAt,
+    nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
+    attemptCount: attemptCount ?? this.attemptCount,
+    lastError: lastError.present ? lastError.value : this.lastError,
+  );
+  ChatSyncJob copyWithCompanion(ChatSyncJobsCompanion data) {
+    return ChatSyncJob(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      messageId: data.messageId.present ? data.messageId.value : this.messageId,
+      jobType: data.jobType.present ? data.jobType.value : this.jobType,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      nextAttemptAt: data.nextAttemptAt.present
+          ? data.nextAttemptAt.value
+          : this.nextAttemptAt,
+      attemptCount: data.attemptCount.present
+          ? data.attemptCount.value
+          : this.attemptCount,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChatSyncJob(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('messageId: $messageId, ')
+          ..write('jobType: $jobType, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('nextAttemptAt: $nextAttemptAt, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('lastError: $lastError')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    sessionId,
+    messageId,
+    jobType,
+    createdAt,
+    nextAttemptAt,
+    attemptCount,
+    lastError,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ChatSyncJob &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.sessionId == this.sessionId &&
+          other.messageId == this.messageId &&
+          other.jobType == this.jobType &&
+          other.createdAt == this.createdAt &&
+          other.nextAttemptAt == this.nextAttemptAt &&
+          other.attemptCount == this.attemptCount &&
+          other.lastError == this.lastError);
+}
+
+class ChatSyncJobsCompanion extends UpdateCompanion<ChatSyncJob> {
+  final Value<int> id;
+  final Value<String> userId;
+  final Value<String> sessionId;
+  final Value<String?> messageId;
+  final Value<String> jobType;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> nextAttemptAt;
+  final Value<int> attemptCount;
+  final Value<String?> lastError;
+  const ChatSyncJobsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.sessionId = const Value.absent(),
+    this.messageId = const Value.absent(),
+    this.jobType = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.nextAttemptAt = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.lastError = const Value.absent(),
+  });
+  ChatSyncJobsCompanion.insert({
+    this.id = const Value.absent(),
+    required String userId,
+    required String sessionId,
+    this.messageId = const Value.absent(),
+    required String jobType,
+    this.createdAt = const Value.absent(),
+    this.nextAttemptAt = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.lastError = const Value.absent(),
+  }) : userId = Value(userId),
+       sessionId = Value(sessionId),
+       jobType = Value(jobType);
+  static Insertable<ChatSyncJob> custom({
+    Expression<int>? id,
+    Expression<String>? userId,
+    Expression<String>? sessionId,
+    Expression<String>? messageId,
+    Expression<String>? jobType,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? nextAttemptAt,
+    Expression<int>? attemptCount,
+    Expression<String>? lastError,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (sessionId != null) 'session_id': sessionId,
+      if (messageId != null) 'message_id': messageId,
+      if (jobType != null) 'job_type': jobType,
+      if (createdAt != null) 'created_at': createdAt,
+      if (nextAttemptAt != null) 'next_attempt_at': nextAttemptAt,
+      if (attemptCount != null) 'attempt_count': attemptCount,
+      if (lastError != null) 'last_error': lastError,
+    });
+  }
+
+  ChatSyncJobsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? userId,
+    Value<String>? sessionId,
+    Value<String?>? messageId,
+    Value<String>? jobType,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? nextAttemptAt,
+    Value<int>? attemptCount,
+    Value<String?>? lastError,
+  }) {
+    return ChatSyncJobsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      sessionId: sessionId ?? this.sessionId,
+      messageId: messageId ?? this.messageId,
+      jobType: jobType ?? this.jobType,
+      createdAt: createdAt ?? this.createdAt,
+      nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
+      attemptCount: attemptCount ?? this.attemptCount,
+      lastError: lastError ?? this.lastError,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
+    }
+    if (messageId.present) {
+      map['message_id'] = Variable<String>(messageId.value);
+    }
+    if (jobType.present) {
+      map['job_type'] = Variable<String>(jobType.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (nextAttemptAt.present) {
+      map['next_attempt_at'] = Variable<DateTime>(nextAttemptAt.value);
+    }
+    if (attemptCount.present) {
+      map['attempt_count'] = Variable<int>(attemptCount.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChatSyncJobsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('messageId: $messageId, ')
+          ..write('jobType: $jobType, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('nextAttemptAt: $nextAttemptAt, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('lastError: $lastError')
           ..write(')'))
         .toString();
   }
@@ -685,6 +1506,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $ChatSessionsTable chatSessions = $ChatSessionsTable(this);
   late final $ChatMessagesTable chatMessages = $ChatMessagesTable(this);
+  late final $ChatSyncJobsTable chatSyncJobs = $ChatSyncJobsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -692,6 +1514,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     chatSessions,
     chatMessages,
+    chatSyncJobs,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -709,14 +1532,22 @@ typedef $$ChatSessionsTableCreateCompanionBuilder =
     ChatSessionsCompanion Function({
       required String id,
       required DateTime startedAt,
+      Value<DateTime> updatedAt,
       Value<String?> title,
+      Value<DateTime?> lastMessageAt,
+      Value<String?> lastMessagePreview,
+      Value<int> messageCount,
       Value<int> rowid,
     });
 typedef $$ChatSessionsTableUpdateCompanionBuilder =
     ChatSessionsCompanion Function({
       Value<String> id,
       Value<DateTime> startedAt,
+      Value<DateTime> updatedAt,
       Value<String?> title,
+      Value<DateTime?> lastMessageAt,
+      Value<String?> lastMessagePreview,
+      Value<int> messageCount,
       Value<int> rowid,
     });
 
@@ -765,8 +1596,28 @@ class $$ChatSessionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get title => $composableBuilder(
     column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastMessageAt => $composableBuilder(
+    column: $table.lastMessageAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastMessagePreview => $composableBuilder(
+    column: $table.lastMessagePreview,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get messageCount => $composableBuilder(
+    column: $table.messageCount,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -815,8 +1666,28 @@ class $$ChatSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get title => $composableBuilder(
     column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastMessageAt => $composableBuilder(
+    column: $table.lastMessageAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastMessagePreview => $composableBuilder(
+    column: $table.lastMessagePreview,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get messageCount => $composableBuilder(
+    column: $table.messageCount,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -836,8 +1707,26 @@ class $$ChatSessionsTableAnnotationComposer
   GeneratedColumn<DateTime> get startedAt =>
       $composableBuilder(column: $table.startedAt, builder: (column) => column);
 
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastMessageAt => $composableBuilder(
+    column: $table.lastMessageAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastMessagePreview => $composableBuilder(
+    column: $table.lastMessagePreview,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get messageCount => $composableBuilder(
+    column: $table.messageCount,
+    builder: (column) => column,
+  );
 
   Expression<T> chatMessagesRefs<T extends Object>(
     Expression<T> Function($$ChatMessagesTableAnnotationComposer a) f,
@@ -895,24 +1784,40 @@ class $$ChatSessionsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<DateTime> startedAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
                 Value<String?> title = const Value.absent(),
+                Value<DateTime?> lastMessageAt = const Value.absent(),
+                Value<String?> lastMessagePreview = const Value.absent(),
+                Value<int> messageCount = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatSessionsCompanion(
                 id: id,
                 startedAt: startedAt,
+                updatedAt: updatedAt,
                 title: title,
+                lastMessageAt: lastMessageAt,
+                lastMessagePreview: lastMessagePreview,
+                messageCount: messageCount,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
                 required String id,
                 required DateTime startedAt,
+                Value<DateTime> updatedAt = const Value.absent(),
                 Value<String?> title = const Value.absent(),
+                Value<DateTime?> lastMessageAt = const Value.absent(),
+                Value<String?> lastMessagePreview = const Value.absent(),
+                Value<int> messageCount = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatSessionsCompanion.insert(
                 id: id,
                 startedAt: startedAt,
+                updatedAt: updatedAt,
                 title: title,
+                lastMessageAt: lastMessageAt,
+                lastMessagePreview: lastMessagePreview,
+                messageCount: messageCount,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -979,6 +1884,7 @@ typedef $$ChatMessagesTableCreateCompanionBuilder =
       required bool isUser,
       required String channel,
       required DateTime timestamp,
+      Value<int> sequence,
       Value<int> rowid,
     });
 typedef $$ChatMessagesTableUpdateCompanionBuilder =
@@ -989,6 +1895,7 @@ typedef $$ChatMessagesTableUpdateCompanionBuilder =
       Value<bool> isUser,
       Value<String> channel,
       Value<DateTime> timestamp,
+      Value<int> sequence,
       Value<int> rowid,
     });
 
@@ -1050,6 +1957,11 @@ class $$ChatMessagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get sequence => $composableBuilder(
+    column: $table.sequence,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$ChatSessionsTableFilterComposer get sessionId {
     final $$ChatSessionsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -1108,6 +2020,11 @@ class $$ChatMessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sequence => $composableBuilder(
+    column: $table.sequence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ChatSessionsTableOrderingComposer get sessionId {
     final $$ChatSessionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -1155,6 +2072,9 @@ class $$ChatMessagesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get timestamp =>
       $composableBuilder(column: $table.timestamp, builder: (column) => column);
+
+  GeneratedColumn<int> get sequence =>
+      $composableBuilder(column: $table.sequence, builder: (column) => column);
 
   $$ChatSessionsTableAnnotationComposer get sessionId {
     final $$ChatSessionsTableAnnotationComposer composer = $composerBuilder(
@@ -1214,6 +2134,7 @@ class $$ChatMessagesTableTableManager
                 Value<bool> isUser = const Value.absent(),
                 Value<String> channel = const Value.absent(),
                 Value<DateTime> timestamp = const Value.absent(),
+                Value<int> sequence = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatMessagesCompanion(
                 id: id,
@@ -1222,6 +2143,7 @@ class $$ChatMessagesTableTableManager
                 isUser: isUser,
                 channel: channel,
                 timestamp: timestamp,
+                sequence: sequence,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1232,6 +2154,7 @@ class $$ChatMessagesTableTableManager
                 required bool isUser,
                 required String channel,
                 required DateTime timestamp,
+                Value<int> sequence = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatMessagesCompanion.insert(
                 id: id,
@@ -1240,6 +2163,7 @@ class $$ChatMessagesTableTableManager
                 isUser: isUser,
                 channel: channel,
                 timestamp: timestamp,
+                sequence: sequence,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -1309,6 +2233,280 @@ typedef $$ChatMessagesTableProcessedTableManager =
       ChatMessage,
       PrefetchHooks Function({bool sessionId})
     >;
+typedef $$ChatSyncJobsTableCreateCompanionBuilder =
+    ChatSyncJobsCompanion Function({
+      Value<int> id,
+      required String userId,
+      required String sessionId,
+      Value<String?> messageId,
+      required String jobType,
+      Value<DateTime> createdAt,
+      Value<DateTime> nextAttemptAt,
+      Value<int> attemptCount,
+      Value<String?> lastError,
+    });
+typedef $$ChatSyncJobsTableUpdateCompanionBuilder =
+    ChatSyncJobsCompanion Function({
+      Value<int> id,
+      Value<String> userId,
+      Value<String> sessionId,
+      Value<String?> messageId,
+      Value<String> jobType,
+      Value<DateTime> createdAt,
+      Value<DateTime> nextAttemptAt,
+      Value<int> attemptCount,
+      Value<String?> lastError,
+    });
+
+class $$ChatSyncJobsTableFilterComposer
+    extends Composer<_$AppDatabase, $ChatSyncJobsTable> {
+  $$ChatSyncJobsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get jobType => $composableBuilder(
+    column: $table.jobType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get nextAttemptAt => $composableBuilder(
+    column: $table.nextAttemptAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ChatSyncJobsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ChatSyncJobsTable> {
+  $$ChatSyncJobsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get jobType => $composableBuilder(
+    column: $table.jobType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get nextAttemptAt => $composableBuilder(
+    column: $table.nextAttemptAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ChatSyncJobsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ChatSyncJobsTable> {
+  $$ChatSyncJobsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get sessionId =>
+      $composableBuilder(column: $table.sessionId, builder: (column) => column);
+
+  GeneratedColumn<String> get messageId =>
+      $composableBuilder(column: $table.messageId, builder: (column) => column);
+
+  GeneratedColumn<String> get jobType =>
+      $composableBuilder(column: $table.jobType, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get nextAttemptAt => $composableBuilder(
+    column: $table.nextAttemptAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+}
+
+class $$ChatSyncJobsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ChatSyncJobsTable,
+          ChatSyncJob,
+          $$ChatSyncJobsTableFilterComposer,
+          $$ChatSyncJobsTableOrderingComposer,
+          $$ChatSyncJobsTableAnnotationComposer,
+          $$ChatSyncJobsTableCreateCompanionBuilder,
+          $$ChatSyncJobsTableUpdateCompanionBuilder,
+          (
+            ChatSyncJob,
+            BaseReferences<_$AppDatabase, $ChatSyncJobsTable, ChatSyncJob>,
+          ),
+          ChatSyncJob,
+          PrefetchHooks Function()
+        > {
+  $$ChatSyncJobsTableTableManager(_$AppDatabase db, $ChatSyncJobsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ChatSyncJobsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ChatSyncJobsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ChatSyncJobsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> sessionId = const Value.absent(),
+                Value<String?> messageId = const Value.absent(),
+                Value<String> jobType = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> nextAttemptAt = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+              }) => ChatSyncJobsCompanion(
+                id: id,
+                userId: userId,
+                sessionId: sessionId,
+                messageId: messageId,
+                jobType: jobType,
+                createdAt: createdAt,
+                nextAttemptAt: nextAttemptAt,
+                attemptCount: attemptCount,
+                lastError: lastError,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String userId,
+                required String sessionId,
+                Value<String?> messageId = const Value.absent(),
+                required String jobType,
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> nextAttemptAt = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+              }) => ChatSyncJobsCompanion.insert(
+                id: id,
+                userId: userId,
+                sessionId: sessionId,
+                messageId: messageId,
+                jobType: jobType,
+                createdAt: createdAt,
+                nextAttemptAt: nextAttemptAt,
+                attemptCount: attemptCount,
+                lastError: lastError,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ChatSyncJobsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ChatSyncJobsTable,
+      ChatSyncJob,
+      $$ChatSyncJobsTableFilterComposer,
+      $$ChatSyncJobsTableOrderingComposer,
+      $$ChatSyncJobsTableAnnotationComposer,
+      $$ChatSyncJobsTableCreateCompanionBuilder,
+      $$ChatSyncJobsTableUpdateCompanionBuilder,
+      (
+        ChatSyncJob,
+        BaseReferences<_$AppDatabase, $ChatSyncJobsTable, ChatSyncJob>,
+      ),
+      ChatSyncJob,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1317,4 +2515,6 @@ class $AppDatabaseManager {
       $$ChatSessionsTableTableManager(_db, _db.chatSessions);
   $$ChatMessagesTableTableManager get chatMessages =>
       $$ChatMessagesTableTableManager(_db, _db.chatMessages);
+  $$ChatSyncJobsTableTableManager get chatSyncJobs =>
+      $$ChatSyncJobsTableTableManager(_db, _db.chatSyncJobs);
 }

@@ -14,7 +14,6 @@ import '../../widgets/error_display.dart';
 import '../../widgets/juno_response_bubble.dart';
 import '../../widgets/juno_text_field.dart';
 import '../../widgets/loading_indicator.dart';
-import '../connectors/connectors_screen.dart';
 import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -47,9 +46,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final homeVm = context.read<HomeViewModel>();
-        // Load last session's messages before any network calls.
-        await homeVm.initSession();
         final uid = context.read<AuthViewModel>().user?.uid;
+        // Load last session's messages before any network calls.
+        await homeVm.initSession(uid);
         if (uid != null && uid.isNotEmpty) {
           await homeVm.initWakeWord(uid);
         }
@@ -113,14 +112,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Future<void> _openConnectors() async {
-    Navigator.of(context).pop();
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ConnectorsScreen()),
-    );
-  }
-
   Future<void> _handleNewChat() async {
     Navigator.of(context).pop();
     await context.read<HomeViewModel>().createNewChat();
@@ -143,7 +134,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             userEmail: authVm.user?.email ?? '',
             sessions: homeVm.sessions,
             currentSessionId: homeVm.currentSessionId,
-            onOpenConnectors: _openConnectors,
             onNewChat: _handleNewChat,
             onSelectSession: _handleSelectSession,
           );
@@ -530,7 +520,6 @@ class _HomeDrawer extends StatelessWidget {
   final String userEmail;
   final List<ChatSession> sessions;
   final String? currentSessionId;
-  final VoidCallback onOpenConnectors;
   final VoidCallback onNewChat;
   final void Function(String sessionId) onSelectSession;
 
@@ -539,7 +528,6 @@ class _HomeDrawer extends StatelessWidget {
     required this.userEmail,
     required this.sessions,
     required this.currentSessionId,
-    required this.onOpenConnectors,
     required this.onNewChat,
     required this.onSelectSession,
   });
@@ -607,14 +595,6 @@ class _HomeDrawer extends StatelessWidget {
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
               ),
               onTap: onNewChat,
-            ),
-            ListTile(
-              leading: const Icon(Icons.cable_rounded, color: AppColors.textSecondary),
-              title: const Text(
-                'Connectors',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
-              ),
-              onTap: onOpenConnectors,
             ),
             const Divider(color: AppColors.divider, height: 1),
             if (sessions.isNotEmpty)

@@ -9,18 +9,22 @@ import '../data/repositories/auth_repository.dart';
 import '../data/repositories/chat_repository.dart';
 import '../data/repositories/memory_repository.dart';
 import '../data/repositories/reminder_repository.dart';
+import '../data/services/chat_backup_service.dart';
 import '../data/services/firebase_auth_service.dart';
 import '../data/services/firestore_service.dart';
 import '../data/services/google_calendar_connector_service.dart';
 import '../data/services/lambda_api_service.dart';
 import '../data/services/notification_service.dart';
+import '../data/services/nutrition_scan_service.dart';
 import '../data/services/voice_capture_service.dart';
 import '../data/services/voice_playback_service.dart';
 import '../data/services/voice_session_service.dart';
 import '../data/services/wake_word_service.dart';
 import '../presentation/viewmodels/auth_viewmodel.dart';
 import '../presentation/viewmodels/connectors_viewmodel.dart';
+import '../presentation/viewmodels/dietary_profile_viewmodel.dart';
 import '../presentation/viewmodels/home_viewmodel.dart';
+import '../presentation/viewmodels/nutrition_scan_viewmodel.dart';
 import '../presentation/viewmodels/settings_viewmodel.dart';
 
 List<SingleChildWidget> buildProviders() {
@@ -35,7 +39,11 @@ List<SingleChildWidget> buildProviders() {
 
   // ── Local database (singleton — lives for the lifetime of the app) ─────────
   final appDatabase = AppDatabase();
-  final chatRepository = ChatRepository(db: appDatabase);
+  final chatBackupService = ChatBackupService(db: appDatabase);
+  final chatRepository = ChatRepository(
+    db: appDatabase,
+    chatBackupService: chatBackupService,
+  );
 
   // ── Remote services ────────────────────────────────────────────────────────
   final lambdaApiService = LambdaApiService(
@@ -47,6 +55,7 @@ List<SingleChildWidget> buildProviders() {
     authService: firebaseAuthService,
   );
   final notificationService = NotificationService(apiClient: apiClient);
+  final nutritionScanService = NutritionScanService(apiClient: apiClient);
   final voiceSessionService = VoiceSessionService(
     tokenProvider: firebaseAuthService.getIdToken,
   );
@@ -62,7 +71,9 @@ List<SingleChildWidget> buildProviders() {
     firestoreService: firestoreService,
   );
   final memoryRepository = MemoryRepository(firestoreService: firestoreService);
-  final reminderRepository = ReminderRepository(firestoreService: firestoreService);
+  final reminderRepository = ReminderRepository(
+    firestoreService: firestoreService,
+  );
 
   return [
     // Infrastructure
@@ -73,11 +84,13 @@ List<SingleChildWidget> buildProviders() {
 
     // Local database
     Provider<AppDatabase>.value(value: appDatabase),
+    Provider<ChatBackupService>.value(value: chatBackupService),
     Provider<ChatRepository>.value(value: chatRepository),
 
     // Remote services
     Provider<NotificationService>.value(value: notificationService),
     Provider<LambdaApiService>.value(value: lambdaApiService),
+    Provider<NutritionScanService>.value(value: nutritionScanService),
     Provider<GoogleCalendarConnectorService>.value(
       value: googleCalendarConnectorService,
     ),
@@ -107,15 +120,21 @@ List<SingleChildWidget> buildProviders() {
         voicePlaybackService: voicePlaybackService,
         wakeWordService: wakeWordService,
         chatRepository: chatRepository,
+        chatBackupService: chatBackupService,
       ),
     ),
     ChangeNotifierProvider<SettingsViewModel>(
       create: (_) => SettingsViewModel(firestoreService: firestoreService),
     ),
     ChangeNotifierProvider<ConnectorsViewModel>(
-      create: (_) => ConnectorsViewModel(
-        connectorService: googleCalendarConnectorService,
-      ),
+      create: (_) =>
+          ConnectorsViewModel(connectorService: googleCalendarConnectorService),
+    ),
+    ChangeNotifierProvider<NutritionScanViewModel>(
+      create: (_) => NutritionScanViewModel(service: nutritionScanService),
+    ),
+    ChangeNotifierProvider<DietaryProfileViewModel>(
+      create: (_) => DietaryProfileViewModel(service: nutritionScanService),
     ),
   ];
 }

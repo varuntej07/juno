@@ -42,12 +42,17 @@ class LambdaApiService {
     String message,
     String userId, {
     List<Map<String, String>> history = const [],
+    String? sessionId,
   }) async {
     if (_useStub || _apiClient == null) {
       AppLogger.info(
         'LambdaApiService stub: sendMessage',
         tag: 'LambdaApiService',
-        metadata: {'message': message, 'history_len': history.length},
+        metadata: {
+          'message': message,
+          'history_len': history.length,
+          'sessionId': sessionId,
+        },
       );
       await Future.delayed(const Duration(milliseconds: 800));
       return Result.success(
@@ -63,6 +68,7 @@ class LambdaApiService {
       {
         'message': message,
         'user_id': userId,
+        if (sessionId != null) 'session_id': sessionId,
         if (history.isNotEmpty) 'history': history,
       },
       ChatResponse.fromJson,

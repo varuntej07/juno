@@ -39,7 +39,10 @@ dependencies:
   # Audio — real-time PCM recording + streaming playback
   flutter_sound:
 
-  # Runtime permissions (microphone)
+  # Camera / image selection for nutrition scanner
+  image_picker:
+
+  # Runtime permissions (microphone, camera)
   permission_handler:
 
   # Local database — persistent chat history

@@ -11,6 +11,7 @@ from typing import Any
 
 from ..config.settings import settings
 from ..lib.logger import logger
+from ..lib.query_logger import log_query
 from ..services.claude_client import ClaudeClient
 from ..services.request_auth import resolve_user_id
 from ..services.tool_executor import ToolExecutor
@@ -63,6 +64,9 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
         })
         return _json(400, {"error": "message must be 8 000 characters or fewer"})
 
+    raw_session_id = body.get("session_id")
+    session_id = raw_session_id.strip() if isinstance(raw_session_id, str) and raw_session_id.strip() else None
+
     # Optional conversation history: [{role: "user"|"assistant", content: str}]
     # Pre-slice the raw list before iterating to avoid allocating huge lists
     # when a misbehaving client sends thousands of entries.
@@ -75,8 +79,11 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
            and h.get("content")
     ][: settings.CHAT_HISTORY_WINDOW]
 
+    await log_query(user_id, "chat", message, session_id=session_id)
+
     logger.info("Chat: request received", {
         "user_id": user_id,
+        "session_id": session_id,
         "message_len": len(message),
         "message_preview": message[:80],
         "history_turns": len(history),

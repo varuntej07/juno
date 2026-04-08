@@ -150,7 +150,7 @@ class NotificationService {
             : 'web';
 
     final result = await _apiClient.post(
-      ApiEndpoints.deviceRegister,
+      '/devices/register',
       {'token': token, 'platform': platform},
       (json) => json,
     );

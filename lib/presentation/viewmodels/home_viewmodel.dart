@@ -7,16 +7,17 @@ import '../../core/constants/app_constants.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/errors/error_handler.dart';
 import '../../core/logging/app_logger.dart';
+import '../../core/network/connectivity_service.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/chat_message_model.dart';
 import '../../data/models/voice_models.dart';
 import '../../data/repositories/chat_repository.dart';
+import '../../data/services/chat_backup_service.dart';
 import '../../data/services/lambda_api_service.dart';
 import '../../data/services/voice_capture_service.dart';
 import '../../data/services/voice_playback_service.dart';
 import '../../data/services/voice_session_service.dart';
 import '../../data/services/wake_word_service.dart';
-import '../../core/network/connectivity_service.dart';
 import 'view_state.dart';
 
 export 'view_state.dart';
@@ -31,6 +32,7 @@ class HomeViewModel extends SafeChangeNotifier {
   final VoicePlaybackService _voicePlaybackService;
   final WakeWordService _wakeWordService;
   final ChatRepository _chatRepository;
+  final ChatBackupService _chatBackupService;
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<ConnectivityStatus>? _connectivitySubscription;
@@ -46,6 +48,7 @@ class HomeViewModel extends SafeChangeNotifier {
   String _streamingAssistantText = '';
   String? _activeVoiceSessionId;
   String? _currentSessionId;
+  String? _currentUserId;
   bool _sessionTitleSet = false;
 
   HomeViewModel({
@@ -56,13 +59,15 @@ class HomeViewModel extends SafeChangeNotifier {
     required VoicePlaybackService voicePlaybackService,
     required WakeWordService wakeWordService,
     required ChatRepository chatRepository,
+    required ChatBackupService chatBackupService,
   })  : _lambdaService = lambdaService,
         _connectivityService = connectivityService,
         _voiceSessionService = voiceSessionService,
         _voiceCaptureService = voiceCaptureService,
         _voicePlaybackService = voicePlaybackService,
         _wakeWordService = wakeWordService,
-        _chatRepository = chatRepository {
+        _chatRepository = chatRepository,
+        _chatBackupService = chatBackupService {
     _connectivitySubscription = _connectivityService.statusStream.listen(
       (status) {
         _isOffline = status == ConnectivityStatus.disconnected;
@@ -72,8 +77,6 @@ class HomeViewModel extends SafeChangeNotifier {
     _voiceEventsSubscription = _voiceSessionService.events.listen(_handleVoiceEvent);
     _primeConnectivityState();
   }
-
-  // ── Public state ──────────────────────────────────────────────────────────
 
   ViewState get state => _state;
   MicState get micState => _micState;
@@ -91,29 +94,26 @@ class HomeViewModel extends SafeChangeNotifier {
   String? get activeVoiceSessionId => _activeVoiceSessionId;
   bool get isVoiceCaptureAvailable => _voiceCaptureService.isSupported;
 
-  // ── Initialisation ────────────────────────────────────────────────────────
+  Future<void> initSession(String? userId) async {
+    _currentUserId = _normalizeUserId(userId);
 
-  /// Must be called once after the user is authenticated.
-  /// Restores the last session's messages so the UI is populated on cold start,
-  /// without a network call.
-  Future<void> initSession() async {
-    final sessionsResult = await _chatRepository.loadRecentSessions(limit: 25);
-    await sessionsResult.when(
-      success: (sessions) async {
-        _sessions = sessions;
-        if (sessions.isNotEmpty) {
-          await _loadSession(sessions.first.id);
-        } else {
-          await _openNewSession();
-          safeNotifyListeners();
-        }
-      },
-      failure: (e) async {
-        AppLogger.error('Failed to load sessions', error: e, tag: 'HomeVM');
-        await _openNewSession();
-        safeNotifyListeners();
-      },
-    );
+    await _loadRecentSessions();
+
+    if (_sessions.isEmpty && _currentUserId != null) {
+      await _chatBackupService.restoreFromBackupIfLocalEmpty(_currentUserId!);
+      await _loadRecentSessions();
+    }
+
+    if (_sessions.isNotEmpty) {
+      await _loadSession(_sessions.first.id);
+    } else {
+      await _openNewSession();
+      safeNotifyListeners();
+    }
+
+    if (_currentUserId != null) {
+      unawaited(_chatBackupService.processPendingJobs(userId: _currentUserId));
+    }
   }
 
   Future<void> switchSession(String sessionId) async {
@@ -136,7 +136,6 @@ class HomeViewModel extends SafeChangeNotifier {
     await _refreshSessions();
   }
 
-  /// Start wake word detection. Call after [initSession].
   Future<void> initWakeWord(String userId) async {
     await _wakeWordService.start(() => startVoiceSession(userId));
     AppLogger.info(
@@ -146,9 +145,8 @@ class HomeViewModel extends SafeChangeNotifier {
     );
   }
 
-  // ── Voice session ─────────────────────────────────────────────────────────
-
   Future<void> startVoiceSession(String userId) async {
+    _currentUserId = _normalizeUserId(userId);
     if (hasActiveVoiceSession) return;
 
     _error = null;
@@ -210,11 +208,11 @@ class HomeViewModel extends SafeChangeNotifier {
     safeNotifyListeners();
   }
 
-  // ── Text chat ─────────────────────────────────────────────────────────────
-
   Future<void> sendMessage(String text, String userId) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+
+    _currentUserId = _normalizeUserId(userId);
 
     if (hasActiveVoiceSession) {
       await sendLiveTextInput(trimmed);
@@ -229,18 +227,16 @@ class HomeViewModel extends SafeChangeNotifier {
       channel: ChatMessageChannel.text,
       sessionId: _currentSessionId,
     );
-    _addAndPersist(userMsg);
+
+    final savedUserMessage = await _persistMessage(userMsg);
+    if (!savedUserMessage) return;
+
     _setState(ViewState.loading);
 
-    // Set session title from first user message (fire and forget).
     if (!_sessionTitleSet && _currentSessionId != null) {
       _sessionTitleSet = true;
-      unawaited(
-        _chatRepository.setSessionTitle(
-          _currentSessionId!,
-          trimmed.length > 60 ? '${trimmed.substring(0, 57)}…' : trimmed,
-        ).then((_) => _refreshSessions()),
-      );
+      final title = trimmed.length > 60 ? '${trimmed.substring(0, 57)}...' : trimmed;
+      unawaited(_persistSessionTitle(_currentSessionId!, title));
     }
 
     try {
@@ -248,9 +244,11 @@ class HomeViewModel extends SafeChangeNotifier {
         trimmed,
         userId,
         history: _buildHistory(exclude: userMsg),
+        sessionId: _currentSessionId,
       );
-      result.when(
-        success: (response) {
+
+      await result.when(
+        success: (response) async {
           final assistantMsg = ChatMessageModel(
             id: _uuid.v4(),
             text: response.text,
@@ -259,12 +257,15 @@ class HomeViewModel extends SafeChangeNotifier {
             channel: ChatMessageChannel.text,
             sessionId: _currentSessionId,
           );
-          _addAndPersist(assistantMsg);
+
+          final savedAssistantMessage = await _persistMessage(assistantMsg);
+          if (!savedAssistantMessage) return;
+
           _error = null;
           _setState(ViewState.loaded);
           ErrorHandler.logBreadcrumb('message_sent');
         },
-        failure: (error) {
+        failure: (error) async {
           _error = error;
           _setState(ViewState.error);
           AppLogger.error('Send message failed', error: error, tag: 'HomeVM');
@@ -279,7 +280,9 @@ class HomeViewModel extends SafeChangeNotifier {
 
   Future<void> sendLiveTextInput(String text) async {
     if (!hasActiveVoiceSession) {
-      _error = AppException.unexpected('Start a live voice session before sending realtime text.');
+      _error = AppException.unexpected(
+        'Start a live voice session before sending realtime text.',
+      );
       safeNotifyListeners();
       return;
     }
@@ -292,7 +295,10 @@ class HomeViewModel extends SafeChangeNotifier {
       channel: ChatMessageChannel.voice,
       sessionId: _currentSessionId,
     );
-    _addAndPersist(msg);
+
+    final saved = await _persistMessage(msg);
+    if (!saved) return;
+
     _streamingAssistantText = '';
     _voiceStatus = VoiceSessionStatus.processing;
     _micState = MicState.processing;
@@ -316,8 +322,6 @@ class HomeViewModel extends SafeChangeNotifier {
     await _voiceSessionService.sendOcrContext(trimmed);
   }
 
-  // ── Session lifecycle ─────────────────────────────────────────────────────
-
   void clearError() {
     _error = null;
     if (_state == ViewState.error) {
@@ -327,12 +331,9 @@ class HomeViewModel extends SafeChangeNotifier {
     }
   }
 
-  /// Ends the current session (history is preserved) and opens a fresh one.
   void clearMessages() {
     unawaited(createNewChat());
   }
-
-  // ── Voice event handler ───────────────────────────────────────────────────
 
   void _handleVoiceEvent(VoiceServerEvent event) {
     switch (event.type) {
@@ -367,15 +368,7 @@ class HomeViewModel extends SafeChangeNotifier {
       case 'assistant.text.final':
         final finalText = (event.text ?? _streamingAssistantText).trim();
         if (finalText.isNotEmpty) {
-          final msg = ChatMessageModel(
-            id: _uuid.v4(),
-            text: finalText,
-            isUser: false,
-            timestamp: DateTime.now(),
-            channel: ChatMessageChannel.voice,
-            sessionId: _currentSessionId,
-          );
-          _addAndPersist(msg);
+          unawaited(_persistGeneratedVoiceMessage(finalText));
         }
         _streamingAssistantText = '';
         _state = ViewState.loaded;
@@ -416,15 +409,7 @@ class HomeViewModel extends SafeChangeNotifier {
         break;
       case 'session.ended':
         if (_streamingAssistantText.trim().isNotEmpty) {
-          final msg = ChatMessageModel(
-            id: _uuid.v4(),
-            text: _streamingAssistantText.trim(),
-            isUser: false,
-            timestamp: DateTime.now(),
-            channel: ChatMessageChannel.voice,
-            sessionId: _currentSessionId,
-          );
-          _addAndPersist(msg);
+          unawaited(_persistGeneratedVoiceMessage(_streamingAssistantText.trim()));
         }
         _streamingAssistantText = '';
         _resetVoiceSessionState();
@@ -433,8 +418,6 @@ class HomeViewModel extends SafeChangeNotifier {
         break;
     }
   }
-
-  // ── Private helpers ───────────────────────────────────────────────────────
 
   Future<void> _loadSession(String sessionId) async {
     _currentSessionId = sessionId;
@@ -474,11 +457,17 @@ class HomeViewModel extends SafeChangeNotifier {
   }
 
   Future<void> _refreshSessions() async {
+    await _loadRecentSessions(notify: true);
+  }
+
+  Future<void> _loadRecentSessions({bool notify = false}) async {
     final result = await _chatRepository.loadRecentSessions(limit: 25);
     result.when(
       success: (sessions) {
         _sessions = sessions;
-        safeNotifyListeners();
+        if (notify) {
+          safeNotifyListeners();
+        }
       },
       failure: (error) {
         AppLogger.error(
@@ -506,21 +495,68 @@ class HomeViewModel extends SafeChangeNotifier {
     _activeVoiceSessionId = null;
   }
 
-  /// Adds [msg] to the in-memory list and fire-and-forgets a DB write.
-  void _addAndPersist(ChatMessageModel msg) {
+  Future<bool> _persistMessage(ChatMessageModel msg) async {
     _messages.add(msg);
-    if (msg.sessionId != null) {
-      unawaited(_chatRepository.saveMessage(msg).catchError(
-        (Object e) => AppLogger.error(
-          'Failed to persist message',
-          error: e,
-          tag: 'HomeVM',
-        ),
-      ));
+    safeNotifyListeners();
+
+    final result = await _chatRepository.saveMessage(
+      msg,
+      userId: _currentUserId,
+    );
+
+    if (result.isFailure) {
+      _messages.remove(msg);
+      final error = result.errorOrNull ??
+          AppException.unexpected('Failed to persist chat message locally.');
+      _error = error;
+      _state = ViewState.error;
+      AppLogger.error(
+        'Failed to persist message locally',
+        error: error,
+        tag: 'HomeVM',
+        metadata: {'messageId': msg.id, 'sessionId': msg.sessionId},
+      );
+      safeNotifyListeners();
+      return false;
     }
+
+    return true;
   }
 
-  /// Opens a brand-new DB session and resets title tracking.
+  Future<void> _persistSessionTitle(String sessionId, String title) async {
+    final result = await _chatRepository.setSessionTitle(
+      sessionId,
+      title,
+      userId: _currentUserId,
+    );
+
+    result.when(
+      success: (_) {
+        unawaited(_refreshSessions());
+      },
+      failure: (error) {
+        AppLogger.error(
+          'Failed to persist session title locally',
+          error: error,
+          tag: 'HomeVM',
+          metadata: {'sessionId': sessionId},
+        );
+      },
+    );
+  }
+
+  Future<void> _persistGeneratedVoiceMessage(String text) async {
+    final msg = ChatMessageModel(
+      id: _uuid.v4(),
+      text: text,
+      isUser: false,
+      timestamp: DateTime.now(),
+      channel: ChatMessageChannel.voice,
+      sessionId: _currentSessionId,
+    );
+    await _persistMessage(msg);
+  }
+
   Future<void> _openNewSession() async {
     try {
       _currentSessionId = await _chatRepository.createSession();
@@ -531,8 +567,6 @@ class HomeViewModel extends SafeChangeNotifier {
     }
   }
 
-  /// Returns the last [chatHistoryWindow] messages (excluding [exclude]) as
-  /// `[{role, content}]` for the backend Claude prompt.
   List<Map<String, String>> _buildHistory({ChatMessageModel? exclude}) {
     final window = AppConstants.chatHistoryWindow;
     final source = _messages.where((m) => m != exclude).toList();
@@ -540,6 +574,15 @@ class HomeViewModel extends SafeChangeNotifier {
         ? source.sublist(source.length - window)
         : source;
     return slice.map((m) => m.toHistoryTurn()).toList();
+  }
+
+  String? _normalizeUserId(String? userId) {
+    if (userId == null) return null;
+    final trimmed = userId.trim();
+    if (trimmed.isEmpty || trimmed == 'anonymous') {
+      return null;
+    }
+    return trimmed;
   }
 
   @override
