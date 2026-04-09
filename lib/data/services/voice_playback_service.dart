@@ -44,7 +44,7 @@ class FlutterSoundPlaybackService implements VoicePlaybackService {
 
       // Flush any chunks that arrived before the stream was open
       for (final chunk in _pendingChunks) {
-        await _player.feedFromStream(chunk);
+        await _player.feedUint8FromStream(chunk);
       }
       _pendingChunks.clear();
     }
@@ -67,7 +67,7 @@ class FlutterSoundPlaybackService implements VoicePlaybackService {
         _pendingChunks.add(bytes);
         await _ensureOpen(sampleRate);
       } else {
-        await _player.feedFromStream(bytes);
+        await _player.feedUint8FromStream(bytes);
       }
     } catch (e, st) {
       AppLogger.error(

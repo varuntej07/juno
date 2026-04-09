@@ -186,7 +186,7 @@ class FirebaseAuthService {
       if (auth != null) {
         signOuts.add(auth.signOut());
       }
-      await Future.wait(signOuts);
+      await Future.wait(signOuts).timeout(const Duration(seconds: 8));
       AppLogger.info('Sign-out successful', tag: 'FirebaseAuthService');
       return const Result.success(null);
     } catch (e, st) {

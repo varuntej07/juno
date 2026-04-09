@@ -236,8 +236,7 @@ def _check_env() -> None:
         "BEDROCK_MODEL": settings.BEDROCK_SONIC_MODEL_ID,
         "GOOGLE_CALENDAR": settings.google_calendar_configured,
         "GOOGLE_CALENDAR_WEBHOOK_URL": bool(settings.GOOGLE_CALENDAR_WEBHOOK_URL),
-        "VERTEX_AI_PROJECT": settings.VERTEX_AI_PROJECT,
-        "VERTEX_AI_LOCATION": settings.VERTEX_AI_LOCATION,
+        "GEMINI_API_KEY": settings.gemini_configured,
         "GEMINI_MODEL": settings.GEMINI_MODEL,
         "ENV": settings.ENV,
     }

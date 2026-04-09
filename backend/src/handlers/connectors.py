@@ -4,6 +4,8 @@ Connector REST handlers for Google Calendar.
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
@@ -42,11 +44,11 @@ async def get_connectors(request: Request) -> JSONResponse:
     if not user_id:
         return _unauthorized()
 
-    connector = GoogleCalendarConnector(user_id)
-    return JSONResponse(
-        status_code=200,
-        content={"google_calendar": connector.get_status()},
-    )
+    def _load() -> dict:
+        return GoogleCalendarConnector(user_id).get_status()
+
+    status = await asyncio.to_thread(_load)
+    return JSONResponse(status_code=200, content={"google_calendar": status})
 
 
 async def connect_google_calendar(request: Request) -> JSONResponse:
@@ -59,12 +61,16 @@ async def connect_google_calendar(request: Request) -> JSONResponse:
     except (ValidationError, ValueError):
         return JSONResponse(status_code=400, content={"error": "server_auth_code is required."})
 
-    connector = GoogleCalendarConnector(user_id)
-    try:
-        status = connector.connect(
+    watch_url = _resolve_watch_url(request)
+
+    def _connect() -> dict:
+        return GoogleCalendarConnector(user_id).connect(
             body.server_auth_code,
-            watch_url=_resolve_watch_url(request),
+            watch_url=watch_url,
         )
+
+    try:
+        status = await asyncio.to_thread(_connect)
         return JSONResponse(status_code=200, content=status)
     except Exception as exc:
         logger.exception("Google Calendar connect failed", {
@@ -79,9 +85,11 @@ async def disconnect_google_calendar(request: Request) -> JSONResponse:
     if not user_id:
         return _unauthorized()
 
-    connector = GoogleCalendarConnector(user_id)
+    def _disconnect() -> dict:
+        return GoogleCalendarConnector(user_id).disconnect()
+
     try:
-        status = connector.disconnect()
+        status = await asyncio.to_thread(_disconnect)
         return JSONResponse(status_code=200, content=status)
     except Exception as exc:
         logger.exception("Google Calendar disconnect failed", {
@@ -96,9 +104,11 @@ async def sync_google_calendar(request: Request) -> JSONResponse:
     if not user_id:
         return _unauthorized()
 
-    connector = GoogleCalendarConnector(user_id)
+    def _sync() -> dict:
+        return GoogleCalendarConnector(user_id).sync_now()
+
     try:
-        status = connector.sync_now()
+        status = await asyncio.to_thread(_sync)
         return JSONResponse(status_code=200, content=status)
     except Exception as exc:
         logger.exception("Google Calendar sync failed", {

@@ -1,5 +1,6 @@
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/config/environment.dart';
 import '../core/network/api_client.dart';
@@ -27,7 +28,7 @@ import '../presentation/viewmodels/home_viewmodel.dart';
 import '../presentation/viewmodels/nutrition_scan_viewmodel.dart';
 import '../presentation/viewmodels/settings_viewmodel.dart';
 
-List<SingleChildWidget> buildProviders() {
+List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
   // ── Infrastructure ─────────────────────────────────────────────────────────
   final firebaseAuthService = FirebaseAuthService();
   final firestoreService = FirestoreService();
@@ -134,7 +135,7 @@ List<SingleChildWidget> buildProviders() {
       create: (_) => NutritionScanViewModel(service: nutritionScanService),
     ),
     ChangeNotifierProvider<DietaryProfileViewModel>(
-      create: (_) => DietaryProfileViewModel(service: nutritionScanService),
+      create: (_) => DietaryProfileViewModel(service: nutritionScanService, prefs: prefs),
     ),
   ];
 }

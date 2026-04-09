@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/base/safe_change_notifier.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/logging/app_logger.dart';
@@ -7,16 +9,24 @@ import 'view_state.dart';
 
 export 'view_state.dart';
 
+const _kNutritionAgentEnabled = 'nutrition_agent_enabled';
+
 class DietaryProfileViewModel extends SafeChangeNotifier {
   final NutritionScanService _service;
+  final SharedPreferences _prefs;
 
   ViewState _state = ViewState.idle;
   DietaryProfileModel? _profile;
   AppException? _error;
   bool _nutritionAgentEnabled = false;
 
-  DietaryProfileViewModel({required NutritionScanService service})
-      : _service = service;
+  DietaryProfileViewModel({
+    required NutritionScanService service,
+    required SharedPreferences prefs,
+  })  : _service = service,
+        _prefs = prefs,
+        // Restore cached state immediately — no network call needed.
+        _nutritionAgentEnabled = prefs.getBool(_kNutritionAgentEnabled) ?? false;
 
   ViewState get state => _state;
   DietaryProfileModel? get profile => _profile;
@@ -36,6 +46,7 @@ class DietaryProfileViewModel extends SafeChangeNotifier {
       success: (profile) {
         _profile = profile;
         _nutritionAgentEnabled = profile != null;
+        _prefs.setBool(_kNutritionAgentEnabled, profile != null);
         _error = null;
         _setState(ViewState.loaded);
       },
@@ -55,6 +66,7 @@ class DietaryProfileViewModel extends SafeChangeNotifier {
       success: (saved) {
         _profile = saved;
         _nutritionAgentEnabled = true;
+        _prefs.setBool(_kNutritionAgentEnabled, true);
         _error = null;
         success = true;
         _setState(ViewState.loaded);
@@ -71,6 +83,7 @@ class DietaryProfileViewModel extends SafeChangeNotifier {
   void disableNutritionAgent() {
     _nutritionAgentEnabled = false;
     _profile = null;
+    _prefs.setBool(_kNutritionAgentEnabled, false);
     safeNotifyListeners();
   }
 

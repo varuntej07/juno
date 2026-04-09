@@ -1,9 +1,8 @@
 """
 Gemini client via Google Gen AI SDK (google-genai).
 
-Uses Application Default Credentials (ADC) with Vertex AI backend —
-works automatically on Cloud Run with the attached service account.
-No API key required.
+Uses the Gemini Developer API with an API key (GEMINI_API_KEY).
+Model: gemini-2.5-flash — multimodal, fast, cheapest in the 2.5 family.
 
 Two public async methods:
   - scan_image()   → detect food / read nutrition label, return confidence + questions
@@ -160,22 +159,22 @@ def _fallback_scan(scan_id: str) -> ScanResult:
 # ─── Client ──────────────────────────────────────────────────────────────────
 
 class GeminiClient:
-    """Async wrapper around Google Gen AI SDK with Vertex AI backend."""
+    """Async wrapper around Google Gen AI SDK (Gemini Developer API)."""
 
     def __init__(self) -> None:
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is not configured — nutrition scan unavailable")
+
         from google import genai  # type: ignore
         from google.genai import types  # type: ignore
 
-        self._client = genai.Client(
-            vertexai=True,
-            project=settings.VERTEX_AI_PROJECT,
-            location=settings.VERTEX_AI_LOCATION,
-        )
+        self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self._types = types
         self._config = types.GenerateContentConfig(
             temperature=0.1,
             top_p=0.95,
             max_output_tokens=2048,
+            response_mime_type="application/json",
         )
 
     def _call_sync(self, contents: list) -> str:
@@ -184,7 +183,7 @@ class GeminiClient:
             contents=contents,
             config=self._config,
         )
-        return response.text
+        return response.text or ""
 
     async def _call(self, contents: list) -> str:
         return await asyncio.to_thread(self._call_sync, contents)

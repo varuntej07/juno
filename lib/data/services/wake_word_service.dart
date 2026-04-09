@@ -16,6 +16,7 @@ class WakeWordService {
   static const String _accessKey = 'YOUR_PICOVOICE_ACCESS_KEY';
 
   // Set to false once you have the custom "Hey Juno" .ppn file.
+  // ignore: unused_field
   static const bool _useBuiltIn = true;
 
   bool _isRunning = false;

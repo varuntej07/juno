@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../data/models/scan_result_model.dart';
+import '../../../data/models/dietary_profile_model.dart';
 import '../../viewmodels/dietary_profile_viewmodel.dart';
 import '../../viewmodels/nutrition_scan_viewmodel.dart';
 
@@ -783,7 +784,7 @@ class _ErrorView extends StatelessWidget {
 // ─── Profile info sheet ───────────────────────────────────────────────────────
 
 class _ProfileSheet extends StatelessWidget {
-  final profile;
+  final DietaryProfileModel? profile;
 
   const _ProfileSheet({required this.profile});
 
@@ -807,7 +808,7 @@ class _ProfileSheet extends StatelessWidget {
       );
     }
 
-    final p = profile;
+    final p = profile!;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
       child: Column(

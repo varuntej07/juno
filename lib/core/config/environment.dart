@@ -54,12 +54,13 @@ class Environment {
           googleServerClientId: '620715294422-15h8gdqn7ii0b419ksfrf8u7fgghltoi.apps.googleusercontent.com',
         );
       case Env.dev:
-        // Controlled by lib/core/config/dev_targets.dart
-        // Flip isPhysicalDeviceTest / isEmulatorTest there to switch targets
-        return EnvironmentConfig(
+        // Points to the deployed GCP backend so flutter run works without a local server.
+        // To run against a local uvicorn instead, swap apiBaseUrl/wsBaseUrl with
+        // DevTargets.devApiBaseUrl / DevTargets.devWsBaseUrl from dev_targets.dart.
+        return const EnvironmentConfig(
           env: Env.dev,
-          apiBaseUrl: DevTargets.devApiBaseUrl,
-          wsBaseUrl: DevTargets.devWsBaseUrl,
+          apiBaseUrl: 'https://juno-backend-620715294422.us-central1.run.app',
+          wsBaseUrl: 'wss://juno-backend-620715294422.us-central1.run.app',
           firebaseProjectId: 'juno-dev',
           googleServerClientId: '620715294422-15h8gdqn7ii0b419ksfrf8u7fgghltoi.apps.googleusercontent.com',
         );

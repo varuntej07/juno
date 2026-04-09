@@ -90,27 +90,13 @@ class AuthViewModel extends SafeChangeNotifier {
   }
 
   Future<void> signOut() async {
-    _setState(ViewState.loading);
-    try {
-      final result = await _authRepository.signOut();
-      result.when(
-        success: (_) {
-          _user = null;
-          _error = null;
-          ErrorHandler.logBreadcrumb('user_signed_out');
-          _setState(ViewState.idle);
-        },
-        failure: (error) {
-          _error = error;
-          _setState(ViewState.error);
-          AppLogger.error('Sign-out failed', error: error, tag: 'AuthVM');
-        },
-      );
-    } catch (e, st) {
-      ErrorHandler.handle(e, st);
-      _error = AppException.unexpected(e.toString());
-      _setState(ViewState.error);
-    }
+    // Clear local state immediately — app navigates to LoginScreen right away.
+    _user = null;
+    _error = null;
+    ErrorHandler.logBreadcrumb('user_signed_out');
+    _setState(ViewState.idle);
+    // Revoke tokens in background; failures are silent (user is already logged out locally).
+    unawaited(_authRepository.signOut());
   }
 
   void clearError() {

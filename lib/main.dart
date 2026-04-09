@@ -2,6 +2,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'core/config/environment.dart';
 import 'core/config/firebase_config.dart';
@@ -49,5 +50,6 @@ void main() async {
     },
   );
 
-  runApp(MultiProvider(providers: buildProviders(), child: const JunoApp()));
+  final prefs = await SharedPreferences.getInstance();
+  runApp(MultiProvider(providers: buildProviders(prefs), child: const JunoApp()));
 }

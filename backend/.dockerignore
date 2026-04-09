@@ -1,0 +1,27 @@
+# Credentials — never bake into image
+.env
+service-account.json
+google-oauth-calendar.json
+juno_backend.egg-info/
+
+# Python noise
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Dev tooling
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.log
+
+# Git
+.git/
+.gitignore

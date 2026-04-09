@@ -3,7 +3,7 @@ class AppConstants {
 
   // Timeouts
   static const apiConnectTimeout = Duration(seconds: 10);
-  static const apiReadTimeout = Duration(seconds: 15);
+  static const apiReadTimeout = Duration(seconds: 10);
   // Nutrition scan invokes Vertex AI Gemini VLM — allow extra time for vision inference.
   static const nutritionScanTimeout = Duration(seconds: 45);
   static const apiWriteTimeout = Duration(seconds: 30);

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -102,7 +103,12 @@ async def handle_nutrition_scan_request(event: dict[str, Any]) -> dict[str, Any]
         })
 
     except Exception as exc:
-        logger.error("Nutrition scan failed", {"error": str(exc), "user_id": user_id})
+        logger.error("Nutrition scan failed", {
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+            "traceback": traceback.format_exc(),
+            "user_id": user_id,
+        })
         return _json(500, {"error": "Failed to analyze image. Please try again."})
 
 

@@ -6,9 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../data/models/connector_models.dart';
 import '../../viewmodels/connectors_viewmodel.dart';
 import '../../viewmodels/dietary_profile_viewmodel.dart';
-import '../../viewmodels/nutrition_scan_viewmodel.dart';
 import '../../widgets/error_display.dart';
-import '../../widgets/loading_indicator.dart';
 import '../nutrition/dietary_onboarding_screen.dart';
 import '../nutrition/nutrition_scan_screen.dart';
 
@@ -44,13 +42,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
       ),
       body: Consumer2<ConnectorsViewModel, DietaryProfileViewModel>(
         builder: (context, connectorsVm, profileVm, _) {
-          final loading = connectorsVm.state == ViewState.loading &&
-              !connectorsVm.googleCalendar.enabled;
-
-          if (loading) {
-            return const FullScreenLoader(message: 'Loading agents…');
-          }
-
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [

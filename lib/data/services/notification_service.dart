@@ -4,10 +4,8 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../../core/constants/api_endpoints.dart';
 import '../../core/logging/app_logger.dart';
 import '../../core/network/api_client.dart';
-import '../../core/network/api_response.dart';
 
 const _tag = 'NotificationService';
 
