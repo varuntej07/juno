@@ -6,6 +6,7 @@ Used by the text /chat endpoint; Nova Sonic handles voice natively.
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from typing import Any
 
@@ -17,6 +18,16 @@ from ..shared.tools import claude_tool_definitions
 from .tool_executor import ToolExecutor
 
 _MAX_TURNS = 6
+_MAX_RETRIES = 3
+_BASE_DELAY_S = 1.0  # exponential backoff: 1s, 2s, 4s
+
+# Anthropic exceptions worth retrying (transient / server-side)
+_RETRYABLE_ERRORS = (
+    anthropic.OverloadedError,       # 529
+    anthropic.RateLimitError,        # 429
+    anthropic.APIConnectionError,    # network blip
+    anthropic.InternalServerError,   # 500
+)
 
 # get_user_context is a "fetch everything" mega-tool that was causing double-fetches
 # (chat.py used to pre-fetch it, then Claude called it again).  For text chat, Claude
@@ -76,21 +87,44 @@ class ClaudeClient:
                 "messages_in_history": len(messages),
             })
 
-            try:
-                response = await self._client.messages.create(
-                    model=settings.ANTHROPIC_MODEL,
-                    max_tokens=settings.ANTHROPIC_MAX_TOKENS,
-                    system=system_prompt,
-                    tools=tools,  # type: ignore[arg-type]
-                    messages=messages,  # type: ignore[arg-type]
-                )
-            except Exception as exc:
-                logger.exception("Claude: API call failed", {
-                    "turn": turn + 1,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                })
-                raise
+            last_exc: Exception | None = None
+            for attempt in range(1, _MAX_RETRIES + 1):
+                try:
+                    response = await self._client.messages.create(
+                        model=settings.ANTHROPIC_MODEL,
+                        max_tokens=settings.ANTHROPIC_MAX_TOKENS,
+                        system=system_prompt,
+                        tools=tools,  # type: ignore[arg-type]
+                        messages=messages,  # type: ignore[arg-type]
+                    )
+                    break  # success
+                except _RETRYABLE_ERRORS as exc:
+                    last_exc = exc
+                    if attempt == _MAX_RETRIES:
+                        logger.exception("Claude: API call failed after retries", {
+                            "turn": turn + 1,
+                            "attempt": attempt,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        })
+                        raise
+                    delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                    logger.warn("Claude: retryable error, backing off", {
+                        "turn": turn + 1,
+                        "attempt": attempt,
+                        "delay_s": round(delay, 2),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    })
+                    await asyncio.sleep(delay)
+                except Exception as exc:
+                    logger.exception("Claude: API call failed", {
+                        "turn": turn + 1,
+                        "attempt": attempt,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    })
+                    raise
 
             turn_ms = int((time.monotonic() - turn_start) * 1000)
             logger.info(f"Claude: API response (turn {turn + 1})", {

@@ -13,6 +13,7 @@ import '../../data/models/chat_message_model.dart';
 import '../../data/models/voice_models.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/services/chat_backup_service.dart';
+import '../../data/services/feedback_service.dart';
 import '../../data/services/lambda_api_service.dart';
 import '../../data/services/voice_capture_service.dart';
 import '../../data/services/voice_playback_service.dart';
@@ -33,6 +34,7 @@ class HomeViewModel extends SafeChangeNotifier {
   final WakeWordService _wakeWordService;
   final ChatRepository _chatRepository;
   final ChatBackupService _chatBackupService;
+  final FeedbackService _feedbackService;
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<ConnectivityStatus>? _connectivitySubscription;
@@ -60,6 +62,7 @@ class HomeViewModel extends SafeChangeNotifier {
     required WakeWordService wakeWordService,
     required ChatRepository chatRepository,
     required ChatBackupService chatBackupService,
+    required FeedbackService feedbackService,
   })  : _lambdaService = lambdaService,
         _connectivityService = connectivityService,
         _voiceSessionService = voiceSessionService,
@@ -67,7 +70,8 @@ class HomeViewModel extends SafeChangeNotifier {
         _voicePlaybackService = voicePlaybackService,
         _wakeWordService = wakeWordService,
         _chatRepository = chatRepository,
-        _chatBackupService = chatBackupService {
+        _chatBackupService = chatBackupService,
+        _feedbackService = feedbackService {
     _connectivitySubscription = _connectivityService.statusStream.listen(
       (status) {
         _isOffline = status == ConnectivityStatus.disconnected;
@@ -239,42 +243,97 @@ class HomeViewModel extends SafeChangeNotifier {
       unawaited(_persistSessionTitle(_currentSessionId!, title));
     }
 
-    try {
-      final result = await _lambdaService.sendMessage(
-        trimmed,
-        userId,
-        history: _buildHistory(exclude: userMsg),
-        sessionId: _currentSessionId,
-      );
+    await _sendAndHandleResponse(trimmed, userMsg);
+  }
 
-      await result.when(
-        success: (response) async {
-          final assistantMsg = ChatMessageModel(
-            id: _uuid.v4(),
-            text: response.text,
-            isUser: false,
-            timestamp: DateTime.now(),
-            channel: ChatMessageChannel.text,
-            sessionId: _currentSessionId,
-          );
+  /// Retries the last failed response. Finds the user message that preceded
+  /// the error response and re-sends it.
+  Future<void> retryLastResponse(String errorMessageId) async {
+    if (_currentUserId == null) return;
 
-          final savedAssistantMessage = await _persistMessage(assistantMsg);
-          if (!savedAssistantMessage) return;
+    // Find the error message and the user message before it
+    final errorIndex = _messages.indexWhere((m) => m.id == errorMessageId);
+    if (errorIndex < 0) return;
 
-          _error = null;
-          _setState(ViewState.loaded);
-          ErrorHandler.logBreadcrumb('message_sent');
-        },
-        failure: (error) async {
-          _error = error;
-          _setState(ViewState.error);
-          AppLogger.error('Send message failed', error: error, tag: 'HomeVM');
-        },
-      );
-    } catch (e, st) {
-      ErrorHandler.handle(e, st);
-      _error = AppException.unexpected(e.toString(), error: e, stackTrace: st);
-      _setState(ViewState.error);
+    final errorMsg = _messages[errorIndex];
+    if (errorMsg.status != MessageStatus.error) return;
+
+    // Find the preceding user message
+    ChatMessageModel? userMsg;
+    for (var i = errorIndex - 1; i >= 0; i--) {
+      if (_messages[i].isUser) {
+        userMsg = _messages[i];
+        break;
+      }
+    }
+    if (userMsg == null) return;
+
+    // Remove the error message from local state + DB
+    _messages.removeAt(errorIndex);
+    safeNotifyListeners();
+
+    _setState(ViewState.loading);
+    await _sendAndHandleResponse(userMsg.text, userMsg);
+  }
+
+  /// Edits a user message: updates its text, deletes all messages after it,
+  /// and re-sends to get a fresh response.
+  Future<void> editAndResend(String messageId, String newText) async {
+    if (_currentUserId == null) return;
+
+    final msgIndex = _messages.indexWhere((m) => m.id == messageId);
+    if (msgIndex < 0) return;
+
+    final oldMsg = _messages[msgIndex];
+    if (!oldMsg.isUser) return;
+
+    // Update the message content locally
+    final updatedMsg = oldMsg.copyWith(text: newText);
+    _messages[msgIndex] = updatedMsg;
+
+    // Remove all messages after this one
+    if (msgIndex + 1 < _messages.length) {
+      _messages.removeRange(msgIndex + 1, _messages.length);
+    }
+    safeNotifyListeners();
+
+    // Persist: update content in DB + delete subsequent messages
+    await _chatRepository.updateMessageContent(messageId, newText);
+    final seq = await _chatRepository.getMessageSequence(messageId);
+    if (seq != null && _currentSessionId != null) {
+      await _chatRepository.deleteMessagesAfter(_currentSessionId!, seq);
+    }
+
+    // Re-send
+    _setState(ViewState.loading);
+    await _sendAndHandleResponse(newText, updatedMsg);
+  }
+
+  /// Toggles feedback on an assistant message.
+  /// Persists locally (SQLite) and remotely (Firestore).
+  Future<void> setFeedback(String messageId, MessageFeedback? feedback) async {
+    final msgIndex = _messages.indexWhere((m) => m.id == messageId);
+    if (msgIndex < 0) return;
+
+    final msg = _messages[msgIndex];
+    if (msg.isUser) return;
+
+    // Update in-memory
+    _messages[msgIndex] = msg.copyWith(feedback: () => feedback);
+    safeNotifyListeners();
+
+    // Persist locally
+    await _chatRepository.updateFeedback(messageId, feedback);
+
+    // Sync to Firestore (fire-and-forget)
+    if (_currentUserId != null && _currentSessionId != null) {
+      unawaited(_feedbackService.saveFeedback(
+        userId: _currentUserId!,
+        messageId: messageId,
+        sessionId: _currentSessionId!,
+        feedback: feedback,
+        messageContent: msg.text,
+      ));
     }
   }
 
@@ -567,9 +626,85 @@ class HomeViewModel extends SafeChangeNotifier {
     }
   }
 
+  /// Shared helper: send user message to API and handle success/failure.
+  /// Extracts the duplicated pattern from sendMessage, retryLastResponse,
+  /// and editAndResend.
+  Future<void> _sendAndHandleResponse(
+    String text,
+    ChatMessageModel userMsg,
+  ) async {
+    try {
+      final result = await _lambdaService.sendMessage(
+        text,
+        _currentUserId!,
+        history: _buildHistory(exclude: userMsg),
+        sessionId: _currentSessionId,
+      );
+
+      await result.when(
+        success: (response) async {
+          final assistantMsg = ChatMessageModel(
+            id: _uuid.v4(),
+            text: response.text,
+            isUser: false,
+            timestamp: DateTime.now(),
+            channel: ChatMessageChannel.text,
+            sessionId: _currentSessionId,
+          );
+
+          final savedAssistantMessage = await _persistMessage(assistantMsg);
+          if (!savedAssistantMessage) return;
+
+          _error = null;
+          _setState(ViewState.loaded);
+          ErrorHandler.logBreadcrumb('message_sent');
+        },
+        failure: (error) async {
+          // Create an error assistant message with the failure reason
+          final errorMsg = ChatMessageModel(
+            id: _uuid.v4(),
+            text: '',
+            isUser: false,
+            timestamp: DateTime.now(),
+            channel: ChatMessageChannel.text,
+            sessionId: _currentSessionId,
+            status: MessageStatus.error,
+            errorReason: _userFriendlyError(error),
+          );
+
+          await _persistMessage(errorMsg);
+          _error = error;
+          _setState(ViewState.error);
+          AppLogger.error('Send message failed', error: error, tag: 'HomeVM');
+        },
+      );
+    } catch (e, st) {
+      ErrorHandler.handle(e, st);
+
+      final errorMsg = ChatMessageModel(
+        id: _uuid.v4(),
+        text: '',
+        isUser: false,
+        timestamp: DateTime.now(),
+        channel: ChatMessageChannel.text,
+        sessionId: _currentSessionId,
+        status: MessageStatus.error,
+        errorReason: _userFriendlyError(
+          AppException.unexpected(e.toString(), error: e, stackTrace: st),
+        ),
+      );
+      await _persistMessage(errorMsg);
+
+      _error = AppException.unexpected(e.toString(), error: e, stackTrace: st);
+      _setState(ViewState.error);
+    }
+  }
+
   List<Map<String, String>> _buildHistory({ChatMessageModel? exclude}) {
     final window = AppConstants.chatHistoryWindow;
-    final source = _messages.where((m) => m != exclude).toList();
+    final source = _messages
+        .where((m) => m != exclude && m.status != MessageStatus.error)
+        .toList();
     final slice = source.length > window
         ? source.sublist(source.length - window)
         : source;
@@ -583,6 +718,24 @@ class HomeViewModel extends SafeChangeNotifier {
       return null;
     }
     return trimmed;
+  }
+
+  /// Converts AppException to a user-friendly error message.
+  static String _userFriendlyError(AppException error) {
+    final msg = error.message.toLowerCase();
+    if (msg.contains('overloaded') || msg.contains('529')) {
+      return 'The AI service is temporarily overloaded. Please retry in a moment.';
+    }
+    if (msg.contains('timeout') || msg.contains('timed out')) {
+      return 'The request timed out. Please check your connection and retry.';
+    }
+    if (msg.contains('network') || msg.contains('connection')) {
+      return 'Network error. Please check your internet connection and retry.';
+    }
+    if (msg.contains('rate limit') || msg.contains('429')) {
+      return 'Too many requests. Please wait a moment and retry.';
+    }
+    return 'Something went wrong. Please try again.';
   }
 
   @override

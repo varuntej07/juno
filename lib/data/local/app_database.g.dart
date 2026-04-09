@@ -573,6 +573,37 @@ class $ChatMessagesTable extends ChatMessages
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _feedbackMeta = const VerificationMeta(
+    'feedback',
+  );
+  @override
+  late final GeneratedColumn<String> feedback = GeneratedColumn<String>(
+    'feedback',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _errorReasonMeta = const VerificationMeta(
+    'errorReason',
+  );
+  @override
+  late final GeneratedColumn<String> errorReason = GeneratedColumn<String>(
+    'error_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -582,6 +613,9 @@ class $ChatMessagesTable extends ChatMessages
     channel,
     timestamp,
     sequence,
+    feedback,
+    status,
+    errorReason,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -646,6 +680,27 @@ class $ChatMessagesTable extends ChatMessages
         sequence.isAcceptableOrUnknown(data['sequence']!, _sequenceMeta),
       );
     }
+    if (data.containsKey('feedback')) {
+      context.handle(
+        _feedbackMeta,
+        feedback.isAcceptableOrUnknown(data['feedback']!, _feedbackMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('error_reason')) {
+      context.handle(
+        _errorReasonMeta,
+        errorReason.isAcceptableOrUnknown(
+          data['error_reason']!,
+          _errorReasonMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -683,6 +738,18 @@ class $ChatMessagesTable extends ChatMessages
         DriftSqlType.int,
         data['${effectivePrefix}sequence'],
       )!,
+      feedback: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}feedback'],
+      ),
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      ),
+      errorReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error_reason'],
+      ),
     );
   }
 
@@ -700,6 +767,9 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
   final String channel;
   final DateTime timestamp;
   final int sequence;
+  final String? feedback;
+  final String? status;
+  final String? errorReason;
   const ChatMessage({
     required this.id,
     required this.sessionId,
@@ -708,6 +778,9 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     required this.channel,
     required this.timestamp,
     required this.sequence,
+    this.feedback,
+    this.status,
+    this.errorReason,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -719,6 +792,15 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     map['channel'] = Variable<String>(channel);
     map['timestamp'] = Variable<DateTime>(timestamp);
     map['sequence'] = Variable<int>(sequence);
+    if (!nullToAbsent || feedback != null) {
+      map['feedback'] = Variable<String>(feedback);
+    }
+    if (!nullToAbsent || status != null) {
+      map['status'] = Variable<String>(status);
+    }
+    if (!nullToAbsent || errorReason != null) {
+      map['error_reason'] = Variable<String>(errorReason);
+    }
     return map;
   }
 
@@ -731,6 +813,15 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       channel: Value(channel),
       timestamp: Value(timestamp),
       sequence: Value(sequence),
+      feedback: feedback == null && nullToAbsent
+          ? const Value.absent()
+          : Value(feedback),
+      status: status == null && nullToAbsent
+          ? const Value.absent()
+          : Value(status),
+      errorReason: errorReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(errorReason),
     );
   }
 
@@ -747,6 +838,9 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       channel: serializer.fromJson<String>(json['channel']),
       timestamp: serializer.fromJson<DateTime>(json['timestamp']),
       sequence: serializer.fromJson<int>(json['sequence']),
+      feedback: serializer.fromJson<String?>(json['feedback']),
+      status: serializer.fromJson<String?>(json['status']),
+      errorReason: serializer.fromJson<String?>(json['errorReason']),
     );
   }
   @override
@@ -760,6 +854,9 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       'channel': serializer.toJson<String>(channel),
       'timestamp': serializer.toJson<DateTime>(timestamp),
       'sequence': serializer.toJson<int>(sequence),
+      'feedback': serializer.toJson<String?>(feedback),
+      'status': serializer.toJson<String?>(status),
+      'errorReason': serializer.toJson<String?>(errorReason),
     };
   }
 
@@ -771,6 +868,9 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     String? channel,
     DateTime? timestamp,
     int? sequence,
+    Value<String?> feedback = const Value.absent(),
+    Value<String?> status = const Value.absent(),
+    Value<String?> errorReason = const Value.absent(),
   }) => ChatMessage(
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
@@ -779,6 +879,9 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
     channel: channel ?? this.channel,
     timestamp: timestamp ?? this.timestamp,
     sequence: sequence ?? this.sequence,
+    feedback: feedback.present ? feedback.value : this.feedback,
+    status: status.present ? status.value : this.status,
+    errorReason: errorReason.present ? errorReason.value : this.errorReason,
   );
   ChatMessage copyWithCompanion(ChatMessagesCompanion data) {
     return ChatMessage(
@@ -789,6 +892,11 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
       channel: data.channel.present ? data.channel.value : this.channel,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
       sequence: data.sequence.present ? data.sequence.value : this.sequence,
+      feedback: data.feedback.present ? data.feedback.value : this.feedback,
+      status: data.status.present ? data.status.value : this.status,
+      errorReason: data.errorReason.present
+          ? data.errorReason.value
+          : this.errorReason,
     );
   }
 
@@ -801,14 +909,27 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
           ..write('isUser: $isUser, ')
           ..write('channel: $channel, ')
           ..write('timestamp: $timestamp, ')
-          ..write('sequence: $sequence')
+          ..write('sequence: $sequence, ')
+          ..write('feedback: $feedback, ')
+          ..write('status: $status, ')
+          ..write('errorReason: $errorReason')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, sessionId, content, isUser, channel, timestamp, sequence);
+  int get hashCode => Object.hash(
+    id,
+    sessionId,
+    content,
+    isUser,
+    channel,
+    timestamp,
+    sequence,
+    feedback,
+    status,
+    errorReason,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -819,7 +940,10 @@ class ChatMessage extends DataClass implements Insertable<ChatMessage> {
           other.isUser == this.isUser &&
           other.channel == this.channel &&
           other.timestamp == this.timestamp &&
-          other.sequence == this.sequence);
+          other.sequence == this.sequence &&
+          other.feedback == this.feedback &&
+          other.status == this.status &&
+          other.errorReason == this.errorReason);
 }
 
 class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
@@ -830,6 +954,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
   final Value<String> channel;
   final Value<DateTime> timestamp;
   final Value<int> sequence;
+  final Value<String?> feedback;
+  final Value<String?> status;
+  final Value<String?> errorReason;
   final Value<int> rowid;
   const ChatMessagesCompanion({
     this.id = const Value.absent(),
@@ -839,6 +966,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     this.channel = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.sequence = const Value.absent(),
+    this.feedback = const Value.absent(),
+    this.status = const Value.absent(),
+    this.errorReason = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ChatMessagesCompanion.insert({
@@ -849,6 +979,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     required String channel,
     required DateTime timestamp,
     this.sequence = const Value.absent(),
+    this.feedback = const Value.absent(),
+    this.status = const Value.absent(),
+    this.errorReason = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sessionId = Value(sessionId),
@@ -864,6 +997,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     Expression<String>? channel,
     Expression<DateTime>? timestamp,
     Expression<int>? sequence,
+    Expression<String>? feedback,
+    Expression<String>? status,
+    Expression<String>? errorReason,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -874,6 +1010,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
       if (channel != null) 'channel': channel,
       if (timestamp != null) 'timestamp': timestamp,
       if (sequence != null) 'sequence': sequence,
+      if (feedback != null) 'feedback': feedback,
+      if (status != null) 'status': status,
+      if (errorReason != null) 'error_reason': errorReason,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -886,6 +1025,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     Value<String>? channel,
     Value<DateTime>? timestamp,
     Value<int>? sequence,
+    Value<String?>? feedback,
+    Value<String?>? status,
+    Value<String?>? errorReason,
     Value<int>? rowid,
   }) {
     return ChatMessagesCompanion(
@@ -896,6 +1038,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
       channel: channel ?? this.channel,
       timestamp: timestamp ?? this.timestamp,
       sequence: sequence ?? this.sequence,
+      feedback: feedback ?? this.feedback,
+      status: status ?? this.status,
+      errorReason: errorReason ?? this.errorReason,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -924,6 +1069,15 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
     if (sequence.present) {
       map['sequence'] = Variable<int>(sequence.value);
     }
+    if (feedback.present) {
+      map['feedback'] = Variable<String>(feedback.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (errorReason.present) {
+      map['error_reason'] = Variable<String>(errorReason.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -940,6 +1094,9 @@ class ChatMessagesCompanion extends UpdateCompanion<ChatMessage> {
           ..write('channel: $channel, ')
           ..write('timestamp: $timestamp, ')
           ..write('sequence: $sequence, ')
+          ..write('feedback: $feedback, ')
+          ..write('status: $status, ')
+          ..write('errorReason: $errorReason, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1885,6 +2042,9 @@ typedef $$ChatMessagesTableCreateCompanionBuilder =
       required String channel,
       required DateTime timestamp,
       Value<int> sequence,
+      Value<String?> feedback,
+      Value<String?> status,
+      Value<String?> errorReason,
       Value<int> rowid,
     });
 typedef $$ChatMessagesTableUpdateCompanionBuilder =
@@ -1896,6 +2056,9 @@ typedef $$ChatMessagesTableUpdateCompanionBuilder =
       Value<String> channel,
       Value<DateTime> timestamp,
       Value<int> sequence,
+      Value<String?> feedback,
+      Value<String?> status,
+      Value<String?> errorReason,
       Value<int> rowid,
     });
 
@@ -1962,6 +2125,21 @@ class $$ChatMessagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get feedback => $composableBuilder(
+    column: $table.feedback,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get errorReason => $composableBuilder(
+    column: $table.errorReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$ChatSessionsTableFilterComposer get sessionId {
     final $$ChatSessionsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -2025,6 +2203,21 @@ class $$ChatMessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get feedback => $composableBuilder(
+    column: $table.feedback,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get errorReason => $composableBuilder(
+    column: $table.errorReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ChatSessionsTableOrderingComposer get sessionId {
     final $$ChatSessionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -2075,6 +2268,17 @@ class $$ChatMessagesTableAnnotationComposer
 
   GeneratedColumn<int> get sequence =>
       $composableBuilder(column: $table.sequence, builder: (column) => column);
+
+  GeneratedColumn<String> get feedback =>
+      $composableBuilder(column: $table.feedback, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get errorReason => $composableBuilder(
+    column: $table.errorReason,
+    builder: (column) => column,
+  );
 
   $$ChatSessionsTableAnnotationComposer get sessionId {
     final $$ChatSessionsTableAnnotationComposer composer = $composerBuilder(
@@ -2135,6 +2339,9 @@ class $$ChatMessagesTableTableManager
                 Value<String> channel = const Value.absent(),
                 Value<DateTime> timestamp = const Value.absent(),
                 Value<int> sequence = const Value.absent(),
+                Value<String?> feedback = const Value.absent(),
+                Value<String?> status = const Value.absent(),
+                Value<String?> errorReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatMessagesCompanion(
                 id: id,
@@ -2144,6 +2351,9 @@ class $$ChatMessagesTableTableManager
                 channel: channel,
                 timestamp: timestamp,
                 sequence: sequence,
+                feedback: feedback,
+                status: status,
+                errorReason: errorReason,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2155,6 +2365,9 @@ class $$ChatMessagesTableTableManager
                 required String channel,
                 required DateTime timestamp,
                 Value<int> sequence = const Value.absent(),
+                Value<String?> feedback = const Value.absent(),
+                Value<String?> status = const Value.absent(),
+                Value<String?> errorReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatMessagesCompanion.insert(
                 id: id,
@@ -2164,6 +2377,9 @@ class $$ChatMessagesTableTableManager
                 channel: channel,
                 timestamp: timestamp,
                 sequence: sequence,
+                feedback: feedback,
+                status: status,
+                errorReason: errorReason,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

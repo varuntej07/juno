@@ -28,6 +28,9 @@ class ChatMessages extends Table {
   TextColumn get channel => text()();
   DateTimeColumn get timestamp => dateTime()();
   IntColumn get sequence => integer().withDefault(const Constant(0))();
+  TextColumn get feedback => text().nullable()();
+  TextColumn get status => text().nullable()();
+  TextColumn get errorReason => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -50,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -117,6 +120,17 @@ class AppDatabase extends _$AppDatabase {
                   LIMIT 1
                 ), started_at)
             ''');
+          }
+          if (from < 3) {
+            await customStatement(
+              'ALTER TABLE "chat_messages" ADD COLUMN "feedback" TEXT',
+            );
+            await customStatement(
+              'ALTER TABLE "chat_messages" ADD COLUMN "status" TEXT',
+            );
+            await customStatement(
+              'ALTER TABLE "chat_messages" ADD COLUMN "error_reason" TEXT',
+            );
           }
         },
         beforeOpen: (details) async {

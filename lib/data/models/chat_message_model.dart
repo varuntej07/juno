@@ -1,11 +1,18 @@
 enum ChatMessageChannel { text, voice }
 
+enum MessageFeedback { liked, disliked }
+
+enum MessageStatus { sent, error }
+
 class ChatMessageModel {
   final String id;
   final String text;
   final bool isUser;
   final DateTime timestamp;
   final ChatMessageChannel channel;
+  final MessageStatus status;
+  final MessageFeedback? feedback;
+  final String? errorReason;
 
   /// Null until the message is persisted to a SQLite session.
   final String? sessionId;
@@ -16,6 +23,9 @@ class ChatMessageModel {
     required this.isUser,
     required this.timestamp,
     required this.channel,
+    this.status = MessageStatus.sent,
+    this.feedback,
+    this.errorReason,
     this.sessionId,
   });
 
@@ -31,6 +41,17 @@ class ChatMessageModel {
         (c) => c.name == map['channel'],
         orElse: () => ChatMessageChannel.text,
       ),
+      status: MessageStatus.values.firstWhere(
+        (s) => s.name == map['status'],
+        orElse: () => MessageStatus.sent,
+      ),
+      feedback: map['feedback'] == null
+          ? null
+          : MessageFeedback.values.firstWhere(
+              (f) => f.name == map['feedback'],
+              orElse: () => MessageFeedback.liked,
+            ),
+      errorReason: map['error_reason'] as String?,
       sessionId: map['session_id'] as String?,
     );
   }
@@ -41,6 +62,9 @@ class ChatMessageModel {
         'is_user': isUser,
         'timestamp': timestamp.toUtc().toIso8601String(),
         'channel': channel.name,
+        'status': status.name,
+        if (feedback != null) 'feedback': feedback!.name,
+        if (errorReason != null) 'error_reason': errorReason,
         if (sessionId != null) 'session_id': sessionId,
       };
 
@@ -72,6 +96,9 @@ class ChatMessageModel {
     bool? isUser,
     DateTime? timestamp,
     ChatMessageChannel? channel,
+    MessageStatus? status,
+    MessageFeedback? Function()? feedback,
+    String? Function()? errorReason,
     String? sessionId,
   }) {
     return ChatMessageModel(
@@ -80,11 +107,14 @@ class ChatMessageModel {
       isUser: isUser ?? this.isUser,
       timestamp: timestamp ?? this.timestamp,
       channel: channel ?? this.channel,
+      status: status ?? this.status,
+      feedback: feedback != null ? feedback() : this.feedback,
+      errorReason: errorReason != null ? errorReason() : this.errorReason,
       sessionId: sessionId ?? this.sessionId,
     );
   }
 
   @override
   String toString() =>
-      'ChatMessageModel(id: $id, isUser: $isUser, channel: ${channel.name})';
+      'ChatMessageModel(id: $id, isUser: $isUser, channel: ${channel.name}, status: ${status.name})';
 }

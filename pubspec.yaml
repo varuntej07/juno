@@ -31,6 +31,10 @@ dependencies:
   http:
   connectivity_plus:
 
+  # Markdown rendering for chat responses
+  flutter_markdown_plus:
+  url_launcher:
+
   # Utilities
   uuid:
   intl:

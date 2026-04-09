@@ -122,6 +122,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _scrollToBottom();
   }
 
+  void _handleRetry(String messageId) {
+    final homeVm = context.read<HomeViewModel>();
+    homeVm.retryLastResponse(messageId);
+    _scrollToBottom();
+  }
+
+  void _handleEdit(String messageId, String newText) {
+    final homeVm = context.read<HomeViewModel>();
+    homeVm.editAndResend(messageId, newText);
+    _scrollToBottom();
+  }
+
+  void _handleFeedback(String messageId, MessageFeedback? feedback) {
+    context.read<HomeViewModel>().setFeedback(messageId, feedback);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -166,6 +182,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     streamingAssistantText: vm.streamingAssistantText,
                     scrollController: _scrollController,
                     isLoading: vm.state == ViewState.loading,
+                    onRetry: _handleRetry,
+                    onEdit: _handleEdit,
+                    onFeedback: _handleFeedback,
                   );
                 },
               ),
@@ -467,12 +486,18 @@ class _MessageList extends StatelessWidget {
   final String streamingAssistantText;
   final ScrollController scrollController;
   final bool isLoading;
+  final OnRetry onRetry;
+  final OnEdit onEdit;
+  final OnFeedback onFeedback;
 
   const _MessageList({
     required this.messages,
     required this.streamingAssistantText,
     required this.scrollController,
     required this.isLoading,
+    required this.onRetry,
+    required this.onEdit,
+    required this.onFeedback,
   });
 
   @override
@@ -480,13 +505,29 @@ class _MessageList extends StatelessWidget {
     final draftVisible = streamingAssistantText.trim().isNotEmpty;
     final totalItems = messages.length + (isLoading ? 1 : 0) + (draftVisible ? 1 : 0);
 
+    // Find the index of the last assistant message for retry visibility
+    int lastAssistantIndex = -1;
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (!messages[i].isUser) {
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+
     return ListView.builder(
       controller: scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: totalItems,
       itemBuilder: (context, index) {
         if (index < messages.length) {
-          return JunoResponseBubble(message: messages[index]);
+          final msg = messages[index];
+          return JunoResponseBubble(
+            message: msg,
+            isLastAssistantMessage: index == lastAssistantIndex,
+            onRetry: onRetry,
+            onEdit: onEdit,
+            onFeedback: onFeedback,
+          );
         }
 
         final afterMessagesIndex = index - messages.length;

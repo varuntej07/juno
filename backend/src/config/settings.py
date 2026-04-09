@@ -62,7 +62,8 @@ class Settings(BaseSettings):
     # Juno personality
     JUNO_DEFAULT_SYSTEM_PROMPT: str = (
         "You are Juno, a proactive personal assistant that helps with reminders, "
-        "scheduling, memory, and nutrition. Be warm, brief, and conversational."
+        "scheduling, memory, and nutrition. Be warm, brief, and conversational. "
+        "Never use emojis in your responses."
     )
 
     @field_validator("VOICE_GATEWAY_TEMPERATURE", "VOICE_GATEWAY_TOP_P")

@@ -11,6 +11,7 @@ import '../data/repositories/chat_repository.dart';
 import '../data/repositories/memory_repository.dart';
 import '../data/repositories/reminder_repository.dart';
 import '../data/services/chat_backup_service.dart';
+import '../data/services/feedback_service.dart';
 import '../data/services/firebase_auth_service.dart';
 import '../data/services/firestore_service.dart';
 import '../data/services/google_calendar_connector_service.dart';
@@ -41,6 +42,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
   // ── Local database (singleton — lives for the lifetime of the app) ─────────
   final appDatabase = AppDatabase();
   final chatBackupService = ChatBackupService(db: appDatabase);
+  final feedbackService = FeedbackService();
   final chatRepository = ChatRepository(
     db: appDatabase,
     chatBackupService: chatBackupService,
@@ -86,6 +88,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     // Local database
     Provider<AppDatabase>.value(value: appDatabase),
     Provider<ChatBackupService>.value(value: chatBackupService),
+    Provider<FeedbackService>.value(value: feedbackService),
     Provider<ChatRepository>.value(value: chatRepository),
 
     // Remote services
@@ -122,6 +125,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
         wakeWordService: wakeWordService,
         chatRepository: chatRepository,
         chatBackupService: chatBackupService,
+        feedbackService: feedbackService,
       ),
     ),
     ChangeNotifierProvider<SettingsViewModel>(
