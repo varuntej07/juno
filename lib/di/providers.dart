@@ -126,6 +126,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
         chatRepository: chatRepository,
         chatBackupService: chatBackupService,
         feedbackService: feedbackService,
+        notificationService: notificationService,
       ),
     ),
     ChangeNotifierProvider<SettingsViewModel>(

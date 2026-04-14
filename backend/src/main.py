@@ -2,18 +2,15 @@
 Juno backend — FastAPI application.
 
 Routes:
-  GET  /health                  → liveness probe
-  WebSocket /voice/stream       → real-time Nova Sonic voice session
-  POST /chat                    → text conversation (Claude)
-  POST /nutrition/analyze       → OCR nutrition analysis
-  POST /notification-reply      → notification reply → chat
-  POST /scheduler/tick          → deliver due reminders (call from cron)
+  GET  /health -> liveness probe
+  WebSocket /voice/stream -> real-time Nova Sonic voice session
+  POST /chat -> text conversation (Claude)
+  POST /nutrition/analyze -> OCR nutrition analysis
+  POST /notification-reply -> notification reply -> chat
+  POST /scheduler/tick -> deliver due reminders (call from cron)
 
 Local dev:
   uvicorn src.main:app --reload --port 8000
-
-Lambda (REST handlers only):
-  from src.main import handler  # Mangum adapter
 """
 
 from __future__ import annotations
@@ -24,7 +21,9 @@ import os
 import time
 import uuid
 
-from fastapi import FastAPI, Request, WebSocket
+from google.auth.transport.requests import Request as GoogleRequest
+from google.oauth2.id_token import verify_oauth2_token
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import JSONResponse
 from mangum import Mangum
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -40,6 +39,11 @@ from .handlers.connectors import (
     sync_google_calendar,
 )
 from .handlers.dietary_profile import handle_get_dietary_profile, handle_save_dietary_profile
+from .handlers.engagement import (
+    handle_engagement_notify,
+    handle_engagement_orchestrate,
+    handle_engagement_responded,
+)
 from .handlers.notification_reply import handle_notification_reply_request
 from .handlers.nutrition import handle_nutrition_analyze_request, handle_nutrition_scan_request
 from .handlers.scheduler import handle_scheduler_tick
@@ -51,8 +55,7 @@ from .voice_gateway.ws_handler import voice_stream_handler
 app = FastAPI(title="Juno Backend", version="1.0.0")
 
 
-# ─── Request / Response logging middleware ────────────────────────────────────
-
+# Request / Response logging middleware
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = str(uuid.uuid4())[:8]
@@ -96,22 +99,18 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestLoggingMiddleware)
 
 
-# ─── Health ──────────────────────────────────────────────────────────────────
-
 @app.get("/health")
 async def health() -> dict[str, bool]:
     return {"ok": True}
 
 
-# ─── Voice Gateway ───────────────────────────────────────────────────────────
-
+# Voice Gateway
 @app.websocket("/voice/stream")
 async def voice_stream(ws: WebSocket) -> None:
     await voice_stream_handler(ws)
 
 
-# ─── REST endpoints ──────────────────────────────────────────────────────────
-
+# REST endpoints
 def _to_lambda_event(request: Request, body: bytes) -> dict:
     """Convert FastAPI Request into a Lambda-style event dict."""
     claims = decode_firebase_claims(request.headers) or {}
@@ -194,13 +193,67 @@ async def notification_reply_endpoint(request: Request) -> JSONResponse:
     return _lambda_response(result)
 
 
+_CLOUD_RUN_AUDIENCE = "https://juno-backend-620715294422.us-central1.run.app"
+_google_auth_transport = GoogleRequest()
+
+
+def _verify_scheduler_token(request: Request) -> None:
+    """Allow only Cloud Scheduler calls signed by the juno-scheduler service account."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = auth_header.removeprefix("Bearer ")
+    try:
+        claims = verify_oauth2_token(token, _google_auth_transport, audience=_CLOUD_RUN_AUDIENCE)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid OIDC token")
+    if claims.get("email") != settings.SCHEDULER_SA_EMAIL:
+        raise HTTPException(status_code=403, detail="Forbidden service account")
+
+
 @app.post("/scheduler/tick")
-async def scheduler_tick_endpoint() -> JSONResponse:
+async def scheduler_tick_endpoint(
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
     result = await handle_scheduler_tick()
     return _lambda_response(result)
 
 
-# ─── Startup ─────────────────────────────────────────────────────────────────
+# Engagement endpoints (internal — Cloud Tasks only)
+@app.post("/internal/engage/orchestrate")
+async def engage_orchestrate_endpoint(
+    request: Request,
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
+    body = await request.json()
+    result = await handle_engagement_orchestrate(body)
+    return JSONResponse(content=result)
+
+
+@app.post("/internal/engage/notify")
+async def engage_notify_endpoint(
+    request: Request,
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
+    body = await request.json()
+    result = await handle_engagement_notify(body)
+    return JSONResponse(content=result)
+
+
+@app.post("/internal/engage/responded")
+async def engage_responded_endpoint(request: Request) -> JSONResponse:
+    claims = decode_firebase_claims(request.headers)
+    if not claims:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    user_id: str = claims.get("uid") or claims.get("sub") or ""
+    if not user_id:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    body = await request.json()
+    engagement_id: str = body.get("engagement_id", "")
+    result = await handle_engagement_responded(user_id, engagement_id)
+    status = 404 if result.get("error") == "not_found" else 200
+    return JSONResponse(content=result, status_code=status)
+
 
 @app.get("/connectors")
 async def connectors_endpoint(request: Request) -> JSONResponse:
@@ -266,9 +319,8 @@ def _check_env() -> None:
 @app.on_event("startup")
 async def on_startup() -> None:
     _check_env()
-    # Pre-warm Vertex AI / Gemini so the first nutrition scan doesn't stall the
-    # event loop during SDK initialisation (vertexai.init makes gRPC + metadata
-    # service calls that can take 1-5 s on a cold instance).
+    # Pre-warm Vertex AI / Gemini so the first nutrition scan doesn't stall the event loop during SDK initialisation 
+    # (vertexai.init makes gRPC + metadata service calls that can take 1-5 s on a cold instance).
     try:
         await asyncio.to_thread(get_gemini_client)
         logger.info("Gemini client pre-warmed")
@@ -278,7 +330,7 @@ async def on_startup() -> None:
         })
 
 
-# ─── Lambda adapter ───────────────────────────────────────────────────────────
+# Lambda adapter
 # Use `handler` as the Lambda function entrypoint for REST-only deployments.
 # The WebSocket /voice/stream route must run on a persistent server.
 handler = Mangum(app, lifespan="off")

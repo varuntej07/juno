@@ -7,6 +7,19 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../core/logging/app_logger.dart';
 import '../../core/network/api_client.dart';
 
+/// Payload emitted when the user taps an engagement notification.
+class EngagementTapPayload {
+  final String engagementId;
+  final String initialMessage;
+  final String agentContext;
+
+  const EngagementTapPayload({
+    required this.engagementId,
+    required this.initialMessage,
+    required this.agentContext,
+  });
+}
+
 const _tag = 'NotificationService';
 
 /// Android notification channel used for all Juno notifications.
@@ -39,6 +52,14 @@ class NotificationService {
   StreamSubscription<RemoteMessage>? _foregroundSubscription;
 
   final _localNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  final _engagementTapController =
+      StreamController<EngagementTapPayload>.broadcast();
+
+  /// Emits when the user taps an engagement notification.
+  /// Subscribe in HomeViewModel to open chat with pre-loaded context.
+  Stream<EngagementTapPayload> get engagementTapStream =>
+      _engagementTapController.stream;
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -133,6 +154,7 @@ class NotificationService {
     _foregroundSubscription = null;
     _userId = null;
     _initialized = false;
+    await _engagementTapController.close();
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -221,14 +243,20 @@ class NotificationService {
         'reminderId': message.data['reminder_id'],
       },
     );
-    // Navigation is intentionally left as a hook here.
-    // Wire a NavigatorKey or use go_router when deep-linking is needed:
-    //
-    //   switch (notificationType) {
-    //     case 'reminder': navigatorKey.currentState?.pushNamed('/reminders');
-    //     case 'calendar_event': navigatorKey.currentState?.pushNamed('/calendar');
-    //     default: navigatorKey.currentState?.pushNamed('/');
-    //   }
+
+    if (notificationType == 'engagement') {
+      final engagementId = message.data['engagement_id'] as String? ?? '';
+      final initialMessage = message.data['initial_message'] as String? ?? '';
+      final agentContext = message.data['agent_context'] as String? ?? '';
+
+      if (engagementId.isNotEmpty && initialMessage.isNotEmpty) {
+        _engagementTapController.add(EngagementTapPayload(
+          engagementId: engagementId,
+          initialMessage: initialMessage,
+          agentContext: agentContext,
+        ));
+      }
+    }
   }
 
   /// Convenience accessor used for testing / debug screens.

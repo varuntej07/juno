@@ -13,6 +13,7 @@ import '../../widgets/error_display.dart';
 import '../../widgets/juno_response_bubble.dart';
 import '../../widgets/juno_text_field.dart';
 import '../../widgets/loading_indicator.dart';
+import '../reminders/reminders_screen.dart';
 import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -138,6 +139,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     context.read<HomeViewModel>().setFeedback(messageId, feedback);
   }
 
+  void _handleViewReminders() {
+    Navigator.push(context, RemindersScreen.route(context));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -185,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     onRetry: _handleRetry,
                     onEdit: _handleEdit,
                     onFeedback: _handleFeedback,
+                    onViewReminders: _handleViewReminders,
                   );
                 },
               ),
@@ -489,6 +495,7 @@ class _MessageList extends StatelessWidget {
   final OnRetry onRetry;
   final OnEdit onEdit;
   final OnFeedback onFeedback;
+  final VoidCallback onViewReminders;
 
   const _MessageList({
     required this.messages,
@@ -498,6 +505,7 @@ class _MessageList extends StatelessWidget {
     required this.onRetry,
     required this.onEdit,
     required this.onFeedback,
+    required this.onViewReminders,
   });
 
   @override
@@ -527,6 +535,7 @@ class _MessageList extends StatelessWidget {
             onRetry: onRetry,
             onEdit: onEdit,
             onFeedback: onFeedback,
+            onViewReminders: onViewReminders,
           );
         }
 

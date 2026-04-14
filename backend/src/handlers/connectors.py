@@ -128,7 +128,6 @@ async def google_calendar_webhook(request: Request) -> JSONResponse:
 
     try:
         connector.enqueue_sync_from_notification(headers)
-        # Google treats any 2xx/102 as success.
         return JSONResponse(status_code=202, content={"ok": True})
     except Exception as exc:
         logger.warn("Google Calendar webhook rejected", {

@@ -8,6 +8,7 @@ import '../../core/network/api_response.dart';
 import '../local/app_database.dart';
 import '../models/chat_message_model.dart';
 import '../services/chat_backup_service.dart';
+import '../services/lambda_api_service.dart';
 
 class ChatRepository {
   final AppDatabase _db;
@@ -100,6 +101,9 @@ class ChatRepository {
                 status: Value(msg.status.name),
                 feedback: Value(msg.feedback?.name),
                 errorReason: Value(msg.errorReason),
+                engagementId: Value(msg.engagementId),
+                engagementAgent: Value(msg.engagementAgent),
+                reminderJson: Value(msg.reminderPayload?.toJsonString()),
               ),
             );
 
@@ -242,6 +246,22 @@ class ChatRepository {
     }
   }
 
+  /// Deletes a single message by ID.
+  Future<Result<void>> deleteMessage(String messageId) async {
+    try {
+      await (_db.delete(_db.chatMessages)..where((t) => t.id.equals(messageId))).go();
+      return const Result.success(null);
+    } catch (e, st) {
+      return Result.failure(
+        AppException.unexpected(
+          'Failed to delete message',
+          error: e,
+          stackTrace: st,
+        ),
+      );
+    }
+  }
+
   /// Deletes all messages in a session with sequence > [afterSequence].
   /// Used by the edit feature to remove everything after the edited message.
   Future<Result<void>> deleteMessagesAfter(
@@ -329,6 +349,9 @@ class ChatRepository {
             ),
       errorReason: row.errorReason,
       sessionId: row.sessionId,
+      engagementId: row.engagementId,
+      engagementAgent: row.engagementAgent,
+      reminderPayload: ReminderPayload.tryFromJsonString(row.reminderJson),
     );
   }
 }

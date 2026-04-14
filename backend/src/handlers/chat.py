@@ -1,5 +1,5 @@
 """
-POST /chat — text-based conversation via Claude with tool use.
+POST /chat: text-based conversation via Claude with tool use.
 Lambda-compatible response shape.
 """
 
@@ -68,18 +68,19 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
     session_id = raw_session_id.strip() if isinstance(raw_session_id, str) and raw_session_id.strip() else None
 
     # Optional conversation history: [{role: "user"|"assistant", content: str}]
-    # Pre-slice the raw list before iterating to avoid allocating huge lists
-    # when a misbehaving client sends thousands of entries.
+    # Pre-slice the raw list before iterating to avoid allocating huge lists when a freak sends thousands of entries.
     raw_history: list[Any] = (body.get("history") or [])[-settings.CHAT_HISTORY_WINDOW * 2 :]
     history = [
         {"role": str(h.get("role", "")), "content": str(h.get("content", ""))}
         for h in raw_history
-        if isinstance(h, dict)
-           and h.get("role") in ("user", "assistant")
-           and h.get("content")
+        if isinstance(h, dict) and h.get("role") in ("user", "assistant") and h.get("content")
     ][: settings.CHAT_HISTORY_WINDOW]
 
-    await log_query(user_id, "chat", message, session_id=session_id)
+    # client_message_id is the Drift UUID sent by Flutter. Using it as the Firestore doc ID makes retries idempotent 
+    # same UUID -> upsert, not a duplicate insert
+    client_message_id: str | None = body.get("client_message_id") or None
+
+    await log_query(user_id, "chat", message, session_id=session_id, client_message_id=client_message_id)
 
     logger.info("Chat: request received", {
         "user_id": user_id,
@@ -108,10 +109,19 @@ async def handle_chat_request(event: dict[str, Any]) -> dict[str, Any]:
             "response_preview": result["text"][:100],
         })
 
+        # Surface set_reminder result so the Flutter client can render a reminder card.
+        reminder_data = next(
+            (d["data"] for d in result.get("tool_result_data", []) if d["tool"] == "set_reminder"),
+            None,
+        )
+        metadata: dict[str, Any] = {"tool_names": result["tool_names"]}
+        if reminder_data:
+            metadata["reminder"] = reminder_data
+
         return _json(200, {
             "text": result["text"],
             "intent": "assistant_response",
-            "metadata": {"tool_names": result["tool_names"]},
+            "metadata": metadata,
         })
 
     except Exception as exc:

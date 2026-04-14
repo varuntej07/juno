@@ -1,3 +1,5 @@
+import '../services/lambda_api_service.dart';
+
 enum ChatMessageChannel { text, voice }
 
 enum MessageFeedback { liked, disliked }
@@ -17,6 +19,14 @@ class ChatMessageModel {
   /// Null until the message is persisted to a SQLite session.
   final String? sessionId;
 
+  /// Set when this message was pre-inserted from an FCM engagement tap.
+  final String? engagementId;
+  final String? engagementAgent;
+
+  /// Non-null when this assistant message was produced by a set_reminder call.
+  /// Drives the inline ReminderCard widget in chat.
+  final ReminderPayload? reminderPayload;
+
   const ChatMessageModel({
     required this.id,
     required this.text,
@@ -27,6 +37,9 @@ class ChatMessageModel {
     this.feedback,
     this.errorReason,
     this.sessionId,
+    this.engagementId,
+    this.engagementAgent,
+    this.reminderPayload,
   });
 
   // ── Serialisation ─────────────────────────────────────────────────────────
@@ -53,6 +66,11 @@ class ChatMessageModel {
             ),
       errorReason: map['error_reason'] as String?,
       sessionId: map['session_id'] as String?,
+      engagementId: map['engagement_id'] as String?,
+      engagementAgent: map['engagement_agent'] as String?,
+      reminderPayload: ReminderPayload.tryFromJsonString(
+        map['reminder_json'] as String?,
+      ),
     );
   }
 
@@ -66,6 +84,9 @@ class ChatMessageModel {
         if (feedback != null) 'feedback': feedback!.name,
         if (errorReason != null) 'error_reason': errorReason,
         if (sessionId != null) 'session_id': sessionId,
+        if (engagementId != null) 'engagement_id': engagementId,
+        if (engagementAgent != null) 'engagement_agent': engagementAgent,
+        if (reminderPayload != null) 'reminder_json': reminderPayload!.toJsonString(),
       };
 
   /// Serialises to the `{role, content}` shape expected by the Claude /chat
@@ -100,6 +121,9 @@ class ChatMessageModel {
     MessageFeedback? Function()? feedback,
     String? Function()? errorReason,
     String? sessionId,
+    String? engagementId,
+    String? engagementAgent,
+    ReminderPayload? Function()? reminderPayload,
   }) {
     return ChatMessageModel(
       id: id ?? this.id,
@@ -111,6 +135,10 @@ class ChatMessageModel {
       feedback: feedback != null ? feedback() : this.feedback,
       errorReason: errorReason != null ? errorReason() : this.errorReason,
       sessionId: sessionId ?? this.sessionId,
+      engagementId: engagementId ?? this.engagementId,
+      engagementAgent: engagementAgent ?? this.engagementAgent,
+      reminderPayload:
+          reminderPayload != null ? reminderPayload() : this.reminderPayload,
     );
   }
 

@@ -15,6 +15,7 @@ from typing import Any
 
 from ..lib.logger import logger
 from ..lib.query_logger import log_query
+from ..services.engagement.task_scheduler import get_task_scheduler
 from ..services.firebase import admin_firestore
 from ..services.gemini_client import ScanResult, get_gemini_client
 from ..services.request_auth import resolve_user_id_from_event
@@ -44,15 +45,12 @@ async def _get_dietary_profile(user_id: str) -> dict[str, Any] | None:
         return None
 
 
-# ─── In-memory scan cache ─────────────────────────────────────────────────────
-# Scans complete within a single user session (seconds to minutes).
-# Cloud Run runs with min-instances=1 so the cache survives between requests
-# for the same user. For true multi-instance scale, move to Redis/Firestore.
+# In-memory scan cache: scans complete within a single user session (seconds to minutes).
+# Cloud Run runs with min-instances=1 so the cache survives between requests for the same user.
 _scan_cache: dict[str, ScanResult] = {}
 
 
-# ─── POST /nutrition/scan ─────────────────────────────────────────────────────
-
+# POST /nutrition/scan
 async def handle_nutrition_scan_request(event: dict[str, Any]) -> dict[str, Any]:
     try:
         body: dict[str, Any] = json.loads(event.get("body") or "{}")
@@ -112,8 +110,7 @@ async def handle_nutrition_scan_request(event: dict[str, Any]) -> dict[str, Any]
         return _json(500, {"error": "Failed to analyze image. Please try again."})
 
 
-# ─── POST /nutrition/analyze ──────────────────────────────────────────────────
-
+# POST /nutrition/analyze
 async def handle_nutrition_analyze_request(event: dict[str, Any]) -> dict[str, Any]:
     try:
         body: dict[str, Any] = json.loads(event.get("body") or "{}")
@@ -170,6 +167,29 @@ async def handle_nutrition_analyze_request(event: dict[str, Any]) -> dict[str, A
             .document(log_id)
         )
         await asyncio.to_thread(lambda: ref.set(log_doc))
+
+        # Durably schedule engagement orchestration via Cloud Tasks
+        # Failures here will never surface to the user, as nutrition result is already saved.
+        try:
+            await asyncio.to_thread(
+                get_task_scheduler().schedule_orchestration,
+                user_id,
+                "nutrition_scan",
+                {
+                    "food_name": analysis.food_name,
+                    "recommendation": analysis.recommendation,
+                    "verdict_reason": analysis.verdict_reason,
+                    "concerns": analysis.concerns,
+                    "macros": analysis.macros,
+                    "log_id": log_id,
+                },
+            )
+        except Exception as sched_exc:
+            logger.error("Engagement scheduling failed (non-fatal)", {
+                "error": str(sched_exc),
+                "user_id": user_id,
+                "log_id": log_id,
+            })
 
         _scan_cache.pop(scan_id, None)
 

@@ -1,15 +1,10 @@
 """
-Structured logger for Juno backend.
+Structured logger for backend
 
 Every log line is emitted as:
   TIMESTAMP  LEVEL     MESSAGE  key='value'  key2='value2'
 
 Errors logged via logger.exception() automatically append the full traceback.
-
-Control verbosity with the LOG_LEVEL environment variable (default: DEBUG).
-  LOG_LEVEL=DEBUG   → all messages
-  LOG_LEVEL=INFO    → info / warn / error
-  LOG_LEVEL=ERROR   → errors only
 """
 
 from __future__ import annotations

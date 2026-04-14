@@ -4,12 +4,9 @@ from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Load .env into os.environ FIRST — before pydantic-settings instantiates and
-# before Firebase / AWS SDK initialise. override=True means .env wins over
-# any stale system-level env vars (e.g. a system ENV=production you may have
-# set previously). Safe to call multiple times; subsequent calls are no-ops.
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"),
-            override=True)
+# Load .env into os.environ FIRST before pydantic-settings instantiates and before Firebase / AWS SDK initialise. 
+# Safe to call multiple times; subsequent calls are no-ops.
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"), override=True)
 
 
 class Settings(BaseSettings):
@@ -55,13 +52,32 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     NUTRITION_SCAN_CONFIDENCE_THRESHOLD: float = 0.85
 
+    # Model tiers
+    #   TIER_FAST -> background tasks, notification copy gen, simple classification
+    #   TIER_BALANCED -> tool-calling tasks that need reasoning but not top-tier quality
+    #   TIER_SMART -> main chat, complex multi-turn reasoning (most expensive)
+    # Provider is inferred from the model ID prefix by ModelProvider.
+    TIER_FAST: str = "gemini-2.5-flash"
+    TIER_BALANCED: str = "claude-haiku-4-5-20251001"
+    TIER_SMART: str = "claude-sonnet-4-6"
+
+    # Cloud Scheduler / Cloud Tasks -> service account for internal endpoints
+    SCHEDULER_SA_EMAIL: str = "juno-scheduler@juno-2ea45.iam.gserviceaccount.com"
+
+    # Cloud Tasks -> engagement notification queue
+    CLOUD_TASKS_PROJECT: str = "juno-2ea45"
+    CLOUD_TASKS_LOCATION: str = "us-central1"
+    CLOUD_TASKS_QUEUE: str = "juno-engagement"
+    # The URL Cloud Tasks will POST to. Must match the deployed Cloud Run URL.
+    BACKEND_INTERNAL_URL: str = "https://juno-backend-620715294422.us-central1.run.app"
+
     # Chat history — number of prior turns forwarded to Claude for context.
     # 10 messages ≈ 1k tokens per request. Tune via env var CHAT_HISTORY_WINDOW.
     CHAT_HISTORY_WINDOW: int = 10
 
     # Juno personality
     JUNO_DEFAULT_SYSTEM_PROMPT: str = (
-        "You are Juno, a proactive personal assistant that helps with reminders, "
+        "You are a friendly buddy, a proactive personal assistant that helps with reminders, "
         "scheduling, memory, and nutrition. Be warm, brief, and conversational. "
         "Never use emojis in your responses."
     )

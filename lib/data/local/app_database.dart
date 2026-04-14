@@ -31,6 +31,11 @@ class ChatMessages extends Table {
   TextColumn get feedback => text().nullable()();
   TextColumn get status => text().nullable()();
   TextColumn get errorReason => text().nullable()();
+  // v4: engagement context — set when message is pre-inserted from an FCM tap
+  TextColumn get engagementId => text().nullable()();
+  TextColumn get engagementAgent => text().nullable()();
+  // v5: reminder payload JSON — set when assistant called set_reminder this turn
+  TextColumn get reminderJson => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -53,7 +58,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -130,6 +135,19 @@ class AppDatabase extends _$AppDatabase {
             );
             await customStatement(
               'ALTER TABLE "chat_messages" ADD COLUMN "error_reason" TEXT',
+            );
+          }
+          if (from < 4) {
+            await customStatement(
+              'ALTER TABLE "chat_messages" ADD COLUMN "engagement_id" TEXT',
+            );
+            await customStatement(
+              'ALTER TABLE "chat_messages" ADD COLUMN "engagement_agent" TEXT',
+            );
+          }
+          if (from < 5) {
+            await customStatement(
+              'ALTER TABLE "chat_messages" ADD COLUMN "reminder_json" TEXT',
             );
           }
         },

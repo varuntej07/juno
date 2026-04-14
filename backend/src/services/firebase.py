@@ -1,7 +1,5 @@
 """
-Firebase Admin SDK — lazy singleton.
-Credentials: GOOGLE_APPLICATION_CREDENTIALS env var (service account JSON path)
-or automatic ADC when running on GCP/Cloud Run.
+Firebase Admin SDK - lazy singleton
 """
 
 from typing import Any

@@ -1,6 +1,6 @@
 """
-GET  /nutrition/profile — fetch user's dietary profile
-POST /nutrition/profile — create or update user's dietary profile
+GET  /nutrition/profile -> fetch user's dietary profile
+POST /nutrition/profile -> create or update user's dietary profile
 """
 
 from __future__ import annotations

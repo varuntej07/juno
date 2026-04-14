@@ -21,18 +21,13 @@ _MAX_TURNS = 6
 _MAX_RETRIES = 3
 _BASE_DELAY_S = 1.0  # exponential backoff: 1s, 2s, 4s
 
-# Anthropic exceptions worth retrying (transient / server-side)
+# Anthropic exceptions that are worth retrying (transient / server-side)
 _RETRYABLE_ERRORS = (
-    anthropic.OverloadedError,       # 529
     anthropic.RateLimitError,        # 429
     anthropic.APIConnectionError,    # network blip
-    anthropic.InternalServerError,   # 500
+    anthropic.InternalServerError,   # 500 / 529
 )
 
-# get_user_context is a "fetch everything" mega-tool that was causing double-fetches
-# (chat.py used to pre-fetch it, then Claude called it again).  For text chat, Claude
-# should call the individual focused tools (list_reminders, get_upcoming_events,
-# query_memory) so it only fetches what's actually needed.
 _CHAT_EXCLUDED_TOOLS = {"get_user_context"}
 
 
@@ -63,8 +58,7 @@ class ClaudeClient:
         """
         tools = [t for t in claude_tool_definitions() if t["name"] not in _CHAT_EXCLUDED_TOOLS]
 
-        # Build message list: prior history + current user turn.
-        # Anthropic requires messages to alternate roles starting with "user".
+        # Build message list: prior history + current user turn
         prior: list[dict[str, Any]] = history or []
         messages: list[dict[str, Any]] = [
             *prior,
@@ -72,6 +66,9 @@ class ClaudeClient:
         ]
         accumulated_text: list[str] = []
         tool_names_used: list[str] = []
+        all_captured_tool_data: list[dict[str, Any]] = []
+        turn = 0
+        response: Any = None
 
         logger.info("Claude: starting conversation", {
             "model": settings.ANTHROPIC_MODEL,
@@ -87,7 +84,6 @@ class ClaudeClient:
                 "messages_in_history": len(messages),
             })
 
-            last_exc: Exception | None = None
             for attempt in range(1, _MAX_RETRIES + 1):
                 try:
                     response = await self._client.messages.create(
@@ -99,7 +95,6 @@ class ClaudeClient:
                     )
                     break  # success
                 except _RETRYABLE_ERRORS as exc:
-                    last_exc = exc
                     if attempt == _MAX_RETRIES:
                         logger.exception("Claude: API call failed after retries", {
                             "turn": turn + 1,
@@ -126,6 +121,7 @@ class ClaudeClient:
                     })
                     raise
 
+            assert response is not None  # retry loop always raises or assigns
             turn_ms = int((time.monotonic() - turn_start) * 1000)
             logger.info(f"Claude: API response (turn {turn + 1})", {
                 "model": settings.ANTHROPIC_MODEL,
@@ -140,14 +136,17 @@ class ClaudeClient:
                 if block.type == "text":
                     accumulated_text.append(block.text)
 
-            # No tool calls → done
+            # No tool calls, break the loop
             if response.stop_reason != "tool_use":
                 break
 
             # Collect all tool_use blocks from this turn
             tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
 
-            # Execute all tool calls for this turn concurrently
+            # Execute all tool calls for this turn concurrently.
+            # captured_tool_data accumulates raw results for surfacing to the Flutter client (e.g. set_reminder -> reminder card in chat UI)
+            captured_tool_data: list[dict[str, Any]] = []
+
             async def _run_tool(block: Any) -> dict[str, Any]:
                 tool_start = time.monotonic()
                 logger.info("Claude: tool call", {
@@ -163,6 +162,9 @@ class ClaudeClient:
                         "duration_ms": tool_ms,
                         "result_keys": list(result.keys()) if isinstance(result, dict) else "non-dict",
                     })
+                    # Capture tool results that the client needs to render UI
+                    if block.name == "set_reminder" and isinstance(result, dict) and "error" not in result:
+                        captured_tool_data.append({"tool": block.name, "data": result})
                 except Exception as exc:
                     tool_ms = int((time.monotonic() - tool_start) * 1000)
                     logger.exception("Claude: tool execution error", {
@@ -179,6 +181,7 @@ class ClaudeClient:
                 }
 
             tool_results = await asyncio.gather(*[_run_tool(b) for b in tool_use_blocks])
+            all_captured_tool_data.extend(captured_tool_data)
 
             # Append assistant turn + tool results to history
             messages.append({"role": "assistant", "content": response.content})  # type: ignore[arg-type]
@@ -199,4 +202,5 @@ class ClaudeClient:
         return {
             "text": final_text,
             "tool_names": tool_names_used,
+            "tool_result_data": all_captured_tool_data,
         }

@@ -15,6 +15,7 @@ import '../../data/repositories/chat_repository.dart';
 import '../../data/services/chat_backup_service.dart';
 import '../../data/services/feedback_service.dart';
 import '../../data/services/lambda_api_service.dart';
+import '../../data/services/notification_service.dart';
 import '../../data/services/voice_capture_service.dart';
 import '../../data/services/voice_playback_service.dart';
 import '../../data/services/voice_session_service.dart';
@@ -35,10 +36,12 @@ class HomeViewModel extends SafeChangeNotifier {
   final ChatRepository _chatRepository;
   final ChatBackupService _chatBackupService;
   final FeedbackService _feedbackService;
+  final NotificationService _notificationService;
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<ConnectivityStatus>? _connectivitySubscription;
   StreamSubscription<VoiceServerEvent>? _voiceEventsSubscription;
+  StreamSubscription<EngagementTapPayload>? _engagementTapSubscription;
 
   ViewState _state = ViewState.idle;
   MicState _micState = MicState.idle;
@@ -63,6 +66,7 @@ class HomeViewModel extends SafeChangeNotifier {
     required ChatRepository chatRepository,
     required ChatBackupService chatBackupService,
     required FeedbackService feedbackService,
+    required NotificationService notificationService,
   })  : _lambdaService = lambdaService,
         _connectivityService = connectivityService,
         _voiceSessionService = voiceSessionService,
@@ -71,7 +75,8 @@ class HomeViewModel extends SafeChangeNotifier {
         _wakeWordService = wakeWordService,
         _chatRepository = chatRepository,
         _chatBackupService = chatBackupService,
-        _feedbackService = feedbackService {
+        _feedbackService = feedbackService,
+        _notificationService = notificationService {
     _connectivitySubscription = _connectivityService.statusStream.listen(
       (status) {
         _isOffline = status == ConnectivityStatus.disconnected;
@@ -79,6 +84,8 @@ class HomeViewModel extends SafeChangeNotifier {
       },
     );
     _voiceEventsSubscription = _voiceSessionService.events.listen(_handleVoiceEvent);
+    _engagementTapSubscription =
+        _notificationService.engagementTapStream.listen(_onEngagementTap);
     _primeConnectivityState();
   }
 
@@ -138,6 +145,61 @@ class HomeViewModel extends SafeChangeNotifier {
     await _openNewSession();
     _setState(ViewState.idle);
     await _refreshSessions();
+  }
+
+  /// Opens a fresh chat session pre-loaded with Juno's engagement message.
+  ///
+  /// Called when the user taps an engagement notification. The [initialMessage]
+  /// is inserted into Drift as an assistant turn (shown in the UI) before the
+  /// user types anything. On the first user reply, [initialMessage] is included
+  /// in the `history[]` sent to Claude so the model has context.
+  ///
+  /// Also fires POST /internal/engage/responded to cancel pending re-engagement
+  /// Cloud Tasks.
+  Future<void> loadWithEngagementContext({
+    required String engagementId,
+    required String agentContext,
+    required String initialMessage,
+  }) async {
+    if (hasActiveVoiceSession) await cancelVoiceSession();
+
+    _messages.clear();
+    _streamingAssistantText = '';
+    _error = null;
+    await _openNewSession();
+
+    final assistantMsg = ChatMessageModel(
+      id: _uuid.v4(),
+      text: initialMessage,
+      isUser: false,
+      timestamp: DateTime.now(),
+      channel: ChatMessageChannel.text,
+      sessionId: _currentSessionId,
+      engagementId: engagementId,
+      engagementAgent: agentContext,
+    );
+    await _persistMessage(assistantMsg);
+
+    _setState(ViewState.loaded);
+    await _refreshSessions();
+
+    // Tell backend the user responded — cancels pending re-engagement tasks
+    unawaited(_lambdaService.markEngagementResponded(engagementId));
+
+    AppLogger.info(
+      'Engagement chat loaded',
+      tag: 'HomeVM',
+      metadata: {'engagementId': engagementId, 'agent': agentContext},
+    );
+  }
+
+  void _onEngagementTap(EngagementTapPayload payload) {
+    if (_currentUserId == null) return;
+    unawaited(loadWithEngagementContext(
+      engagementId: payload.engagementId,
+      agentContext: payload.agentContext,
+      initialMessage: payload.initialMessage,
+    ));
   }
 
   Future<void> initWakeWord(String userId) async {
@@ -268,7 +330,8 @@ class HomeViewModel extends SafeChangeNotifier {
     }
     if (userMsg == null) return;
 
-    // Remove the error message from local state + DB
+    // Remove the error message from DB + local state
+    unawaited(_chatRepository.deleteMessage(errorMsg.id));
     _messages.removeAt(errorIndex);
     safeNotifyListeners();
 
@@ -639,6 +702,10 @@ class HomeViewModel extends SafeChangeNotifier {
         _currentUserId!,
         history: _buildHistory(exclude: userMsg),
         sessionId: _currentSessionId,
+        // userMsg.id is the Drift UUID generated once when the message is first
+        // created. Passing it here makes retries idempotent — the backend uses it
+        // as the Firestore doc ID for the query log (upsert, not new insert).
+        clientMessageId: userMsg.id,
       );
 
       await result.when(
@@ -650,6 +717,7 @@ class HomeViewModel extends SafeChangeNotifier {
             timestamp: DateTime.now(),
             channel: ChatMessageChannel.text,
             sessionId: _currentSessionId,
+            reminderPayload: response.reminderPayload,
           );
 
           final savedAssistantMessage = await _persistMessage(assistantMsg);
@@ -708,7 +776,17 @@ class HomeViewModel extends SafeChangeNotifier {
     final slice = source.length > window
         ? source.sublist(source.length - window)
         : source;
-    return slice.map((m) => m.toHistoryTurn()).toList();
+    final turns = slice.map((m) => m.toHistoryTurn()).toList();
+
+    // Anthropic requires history to start with a user turn. When the session
+    // began from a notification tap the first persisted turn is an assistant
+    // message (the engagement initial_chat_message). Prepend a minimal user
+    // turn so the history is valid.
+    if (turns.isNotEmpty && turns.first['role'] == 'assistant') {
+      turns.insert(0, {'role': 'user', 'content': 'Hey Juno.'});
+    }
+
+    return turns;
   }
 
   String? _normalizeUserId(String? userId) {
@@ -742,6 +820,7 @@ class HomeViewModel extends SafeChangeNotifier {
   void dispose() {
     _connectivitySubscription?.cancel();
     _voiceEventsSubscription?.cancel();
+    _engagementTapSubscription?.cancel();
     unawaited(_wakeWordService.stop());
     unawaited(_voiceSessionService.dispose());
     super.dispose();

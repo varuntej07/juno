@@ -1,6 +1,6 @@
 """
-POST /scheduler/tick — find due reminders and send FCM push notifications.
-Called by a cron job (Cloud Scheduler, EventBridge, etc.) every minute.
+POST /scheduler/tick finds due reminders and sends FCM push notifications.
+Called by a cron job (Cloud Scheduler) every minute
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from ..lib.logger import logger
+from ..services.notification_rewriter import rewrite_reminder_notification
 from ..services.notification_service import send_notification
 from ..services.tool_executor import fetch_due_reminders, mark_reminder_fired
 
@@ -26,12 +27,10 @@ async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str
     """Run one scheduler tick.
 
     All Firestore / Firebase Admin SDK calls are synchronous (blocking I/O).
-    They are dispatched to a thread-pool via ``asyncio.to_thread`` so they
-    never block the event loop.
+    They are dispatched to a thread-pool via `asyncio.to_thread` so they never block the event loop.
 
-    Notifications are sent via the centralized ``send_notification`` function
-    which handles token lookup, FCM multicast, and invalid-token cleanup
-    automatically.
+    Notifications are sent via the centralized `send_notification` function
+    which handles token lookup, FCM multicast, and invalid-token cleanup automatically.
     """
     try:
         from ..services.google_calendar_connector import GoogleCalendarConnector
@@ -50,18 +49,20 @@ async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str
             data: dict[str, Any] = item["data"]
 
             try:
+                raw_message = str(data.get("message", "Reminder due now"))
+                body = await rewrite_reminder_notification(raw_message)
+
                 result = await send_notification(
                     user_id,
                     title="Juno Reminder",
-                    body=str(data.get("message", "Reminder due now")),
+                    body=body,
                     data={
                         "reminder_id": reminder_id,
                         "created_via": str(data.get("created_via", "voice")),
                     },
                     notification_type="reminder",
                     priority="high",
-                    # Collapse prevents duplicate banners if the scheduler
-                    # fires more than once before the user dismisses.
+                    # Collapse prevents duplicate banners if the scheduler fires more than once before the user dismisses.
                     collapse_key=f"reminder_{reminder_id}",
                     apns_category="JUNO_REMINDER",
                 )

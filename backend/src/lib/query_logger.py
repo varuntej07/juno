@@ -1,10 +1,5 @@
 """
-Central query logger.
-
-Writes every user input to users/{uid}/queries/{id}.
-Call this from every handler that receives user-generated text.
-
-Never throws — a logging failure must never fail the request.
+Central query logger: Writes every user input to users/{uid}/queries/{id}.
 """
 
 from __future__ import annotations
@@ -23,12 +18,13 @@ async def log_query(
     query_type: QueryType,
     text: str,
     session_id: str | None = None,
+    client_message_id: str | None = None,
 ) -> None:
-    """Fire-and-forget write to users/{uid}/queries/{id}."""
+    """Idempotent write to users/{uid}/queries/{id}"""
     try:
         from ..services.firebase import admin_firestore
         db = admin_firestore()
-        query_id = str(uuid.uuid4())
+        query_id = client_message_id or str(uuid.uuid4())
         doc: dict = {
             "text": text,
             "type": query_type,
@@ -37,5 +33,11 @@ async def log_query(
         if session_id:
             doc["session_id"] = session_id
         db.collection("users").document(user_id).collection("queries").document(query_id).set(doc)
+
+        # Update last_app_interaction_at in engagement_guard so the decision engine
+        # can detect whether the user is currently active and suppress proactive pings
+        db.collection("users").document(user_id)\
+            .collection("engagement_guard").document("state")\
+            .set({"last_app_interaction_at": doc["timestamp"]}, merge=True)
     except Exception as exc:
         logger.warn("query_logger: write failed", {"user_id": user_id, "error": str(exc)})

@@ -1,11 +1,9 @@
 """
-POST /devices/register — register or refresh an FCM device token.
+POST /devices/register -> register or refresh an FCM device token.
 
 Called by the Flutter app:
   • After sign-in (initial registration)
   • Whenever FirebaseMessaging.onTokenRefresh fires
-
-Auth: Firebase ID token (Bearer) or x-juno-user-id header in dev.
 """
 
 from __future__ import annotations
@@ -19,21 +17,11 @@ from ..lib.logger import logger
 from ..services.fcm_token_registry import register_token
 from ..services.request_auth import resolve_user_id_from_request
 
-_VALID_PLATFORMS = frozenset({"android", "ios", "web"})
+VALID_PLATFORMS = frozenset({"android", "ios", "web"})
 
 
 async def register_device(request: Request) -> JSONResponse:
-    """Register or refresh an FCM token for the authenticated user.
-
-    Request body (JSON):
-        token    str  — FCM registration token from FirebaseMessaging.getToken()
-        platform str  — "android" | "ios" | "web"  (defaults to "android")
-
-    Returns:
-        200  {"ok": true, "platform": "<platform>"}
-        400  {"error": "<reason>"}
-        401  {"error": "Unauthorized"}
-    """
+    """Register or refresh an FCM token for the authenticated user"""
     user_id = resolve_user_id_from_request(request)
     if not user_id:
         logger.warn("register_device: rejected — missing user_id", {
@@ -55,9 +43,9 @@ async def register_device(request: Request) -> JSONResponse:
         return JSONResponse({"error": "token is too long."}, status_code=400)
 
     platform = str(body.get("platform", "android") or "android").strip().lower()
-    if platform not in _VALID_PLATFORMS:
+    if platform not in VALID_PLATFORMS:
         return JSONResponse(
-            {"error": f"platform must be one of: {', '.join(sorted(_VALID_PLATFORMS))}."},
+            {"error": f"platform must be one of: {', '.join(sorted(VALID_PLATFORMS))}."},
             status_code=400,
         )
 

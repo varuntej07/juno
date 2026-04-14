@@ -5,8 +5,8 @@ Uses the Gemini Developer API with an API key (GEMINI_API_KEY).
 Model: gemini-2.5-flash — multimodal, fast, cheapest in the 2.5 family.
 
 Two public async methods:
-  - scan_image()   → detect food / read nutrition label, return confidence + questions
-  - analyze_food() → full macro + verdict analysis given answers + dietary profile
+  - scan_image() -> detect food / read nutrition label, return confidence + questions
+  - analyze_food() -> full macro + verdict analysis given answers + dietary profile
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,7 +23,7 @@ from ..config.settings import settings
 from ..lib.logger import logger
 
 
-# ─── Data classes returned to callers ────────────────────────────────────────
+# Data classes returned to callers
 
 @dataclass
 class ScanQuestion:
@@ -52,76 +53,76 @@ class AnalysisResult:
     concerns: list[str]
 
 
-# ─── Prompts ─────────────────────────────────────────────────────────────────
+# Prompts
 
 _SCAN_SYSTEM = """You are a precision nutrition analysis AI. Analyze the image and return ONLY valid JSON — no markdown, no prose.
 
-Detect what is shown:
-- "nutrition_label": a packaged food nutrition facts panel (tabular text with calories, macros)
-- "restaurant_food": a plated dish or restaurant meal
-- "packaged_food": a packaged product where the label isn't fully visible
-- "unknown": cannot determine
+                Detect what is shown:
+                - "nutrition_label": a packaged food nutrition facts panel (tabular text with calories, macros)
+                - "restaurant_food": a plated dish or restaurant meal
+                - "packaged_food": a packaged product where the label isn't fully visible
+                - "unknown": cannot determine
 
-Return this exact JSON structure:
-{{
-  "detected_type": "<type>",
-  "detected_items": ["<item1>", "<item2>"],
-  "confidence": <0.0 to 1.0>,
-  "raw_text": "<full extracted text from nutrition label, empty string if not a label>",
-  "clarifying_questions": [
-    {{
-      "id": "q1",
-      "text": "<question>",
-      "input_type": "select" | "text" | "number" | "boolean",
-      "options": ["<opt1>", "<opt2>"]
-    }}
-  ]
-}}
+                Return this exact JSON structure:
+                {{
+                "detected_type": "<type>",
+                "detected_items": ["<item1>", "<item2>"],
+                "confidence": <0.0 to 1.0>,
+                "raw_text": "<full extracted text from nutrition label, empty string if not a label>",
+                "clarifying_questions": [
+                    {{
+                    "id": "q1",
+                    "text": "<question>",
+                    "input_type": "select" | "text" | "number" | "boolean",
+                    "options": ["<opt1>", "<opt2>"]
+                    }}
+                ]
+                }}
 
-Rules for clarifying_questions:
-- confidence >= {threshold} AND detected_type == "nutrition_label" with clear macro values → return []
-- confidence < {threshold} OR food is ambiguous → generate 2-5 targeted questions
-- Good questions ask: exact food item, preparation method, portion/serving size, occasion
-- For restaurant food: always ask serving size and preparation (fried/grilled/etc.)
-- Always ask about servings if quantity is unclear from the label
-- Do NOT ask questions you can already answer from the image
+                Rules for clarifying_questions:
+                - confidence >= {threshold} AND detected_type == "nutrition_label" with clear macro values → return []
+                - confidence < {threshold} OR food is ambiguous → generate 2-5 targeted questions
+                - Good questions ask: exact food item, preparation method, portion/serving size, occasion
+                - For restaurant food: always ask serving size and preparation (fried/grilled/etc.)
+                - Always ask about servings if quantity is unclear from the label
+                - Do NOT ask questions you can already answer from the image
 
-{dietary_context}"""
+                {dietary_context}
+                """
 
 
 _ANALYZE_SYSTEM = """You are a nutrition expert. Given the food scan data, user clarifications, and their dietary profile, return a precise nutrition analysis as ONLY valid JSON — no markdown, no prose.
 
-Scan data: {scan_data}
-User answers: {user_answers}
-Dietary profile: {dietary_profile}
+                    Scan data: {scan_data}
+                    User answers: {user_answers}
+                    Dietary profile: {dietary_profile}
 
-Return this exact JSON structure:
-{{
-  "food_name": "<descriptive name>",
-  "macros": {{
-    "calories": <number>,
-    "protein_g": <number>,
-    "carbs_g": <number>,
-    "fat_g": <number>,
-    "sugar_g": <number>,
-    "sodium_mg": <number>,
-    "fiber_g": <number>
-  }},
-  "recommendation": "eat" | "moderate" | "skip",
-  "verdict_reason": "<2-3 sentences tailored to this user's goal and restrictions>",
-  "concerns": ["<concern1>", "<concern2>"]
-}}
+                    Return this exact JSON structure:
+                    {{
+                    "food_name": "<descriptive name>",
+                    "macros": {{
+                        "calories": <number>,
+                        "protein_g": <number>,
+                        "carbs_g": <number>,
+                        "fat_g": <number>,
+                        "sugar_g": <number>,
+                        "sodium_mg": <number>,
+                        "fiber_g": <number>
+                    }},
+                    "recommendation": "eat" | "moderate" | "skip",
+                    "verdict_reason": "<2-3 sentences tailored to this user's goal and restrictions>",
+                    "concerns": ["<concern1>", "<concern2>"]
+                    }}
 
-Recommendation logic:
-- "eat": fits the user's goals, good macros, appropriate portion
-- "moderate": acceptable occasionally, watch portion/frequency
-- "skip": clearly conflicts with the user's goals or health restrictions
+                    Recommendation logic:
+                    - "eat": fits the user's goals, good macros, appropriate portion
+                    - "moderate": acceptable occasionally, watch portion/frequency
+                    - "skip": clearly conflicts with the user's goals or health restrictions
 
-If no dietary profile provided, use general healthy-eating guidelines.
-Be honest and specific. Adjust macros for the serving size the user indicated."""
+                    If no dietary profile provided, use general healthy-eating guidelines.
+                    Be honest and specific. Adjust macros for the serving size the user indicated.
+                """
 
-
-# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _strip_fences(text: str) -> str:
     """Remove markdown code fences Gemini sometimes wraps JSON in."""
@@ -156,7 +157,7 @@ def _fallback_scan(scan_id: str) -> ScanResult:
     )
 
 
-# ─── Client ──────────────────────────────────────────────────────────────────
+# Client
 
 class GeminiClient:
     """Async wrapper around Google Gen AI SDK (Gemini Developer API)."""
@@ -178,17 +179,26 @@ class GeminiClient:
         )
 
     def _call_sync(self, contents: list) -> str:
-        response = self._client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=contents,
-            config=self._config,
-        )
-        return response.text or ""
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = self._client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=contents,
+                    config=self._config,
+                )
+                return response.text or ""
+            except Exception as exc:
+                err_str = str(exc)
+                if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
+                    last_exc = exc
+                    time.sleep(2 ** attempt)  # 1s, 2s, 4s
+                    continue
+                raise
+        raise last_exc  # type: ignore[misc]
 
     async def _call(self, contents: list) -> str:
         return await asyncio.to_thread(self._call_sync, contents)
-
-    # ── scan_image ────────────────────────────────────────────────────────────
 
     async def scan_image(
         self,
@@ -248,8 +258,6 @@ class GeminiClient:
             logger.error("Gemini scan_image parse failed", {"scan_id": sid, "error": str(exc)})
             return _fallback_scan(sid)
 
-    # ── analyze_food ──────────────────────────────────────────────────────────
-
     async def analyze_food(
         self,
         scan_result: ScanResult,
@@ -276,13 +284,13 @@ class GeminiClient:
             result = AnalysisResult(
                 food_name=str(data.get("food_name", "Unknown Food")),
                 macros={
-                    "calories":   float(macros_raw.get("calories",   0)),
-                    "protein_g":  float(macros_raw.get("protein_g",  0)),
-                    "carbs_g":    float(macros_raw.get("carbs_g",    0)),
-                    "fat_g":      float(macros_raw.get("fat_g",      0)),
-                    "sugar_g":    float(macros_raw.get("sugar_g",    0)),
-                    "sodium_mg":  float(macros_raw.get("sodium_mg",  0)),
-                    "fiber_g":    float(macros_raw.get("fiber_g",    0)),
+                    "calories": float(macros_raw.get("calories", 0)),
+                    "protein_g": float(macros_raw.get("protein_g", 0)),
+                    "carbs_g": float(macros_raw.get("carbs_g", 0)),
+                    "fat_g": float(macros_raw.get("fat_g", 0)),
+                    "sugar_g": float(macros_raw.get("sugar_g", 0)),
+                    "sodium_mg": float(macros_raw.get("sodium_mg", 0)),
+                    "fiber_g": float(macros_raw.get("fiber_g", 0)),
                 },
                 recommendation=str(data.get("recommendation", "moderate")),
                 verdict_reason=str(data.get("verdict_reason", "")),
@@ -304,7 +312,7 @@ class GeminiClient:
             raise ValueError(f"Nutrition analysis failed: {exc}") from exc
 
 
-# ─── Module-level singleton ───────────────────────────────────────────────────
+# Module-level singleton
 
 _client: GeminiClient | None = None
 

@@ -1,10 +1,5 @@
 """
-ToolExecutor — implements all 9 Juno tools.
-Same Firestore paths and logic as the TS version.
-
-All firebase-admin SDK calls (Firestore, FCM) are synchronous/blocking.
-Every method wraps them in asyncio.to_thread so they never stall the
-FastAPI event loop.
+ToolExecutor — implements all tools.
 """
 
 from __future__ import annotations
@@ -16,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from google.cloud import firestore as fs
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from ..lib.logger import logger
 from .firebase import admin_firestore, admin_messaging
@@ -27,8 +23,6 @@ ToolResult = dict[str, Any]
 class ToolExecutor:
     def __init__(self, user_id: str) -> None:
         self._user_id = user_id
-
-    # ─── Firestore refs ───────────────────────────────────────────────────────
 
     def _db(self) -> fs.Client:
         return admin_firestore()
@@ -44,8 +38,6 @@ class ToolExecutor:
 
     def _nutrition_logs_ref(self) -> fs.CollectionReference:
         return self._user_ref().collection("nutrition_logs")
-
-    # ─── Dispatch ─────────────────────────────────────────────────────────────
 
     async def execute(self, tool_name: str, input_data: dict[str, Any]) -> ToolResult:
         dispatch: dict[str, Any] = {
@@ -88,8 +80,7 @@ class ToolExecutor:
             })
             raise
 
-    # ─── Reminders ───────────────────────────────────────────────────────────
-
+    # Reminders
     async def _set_reminder(self, inp: dict[str, Any]) -> ToolResult:
         message = str(inp.get("message", "")).strip()
         delay_minutes = inp.get("delay_minutes")
@@ -134,7 +125,7 @@ class ToolExecutor:
         def _fetch() -> list[dict]:
             q = self._reminders_ref().order_by("trigger_at")
             if status_filter != "all":
-                q = q.where("status", "==", status_filter)
+                q = q.where(filter=FieldFilter("status", "==", status_filter))
             return [{"reminder_id": d.id, **d.to_dict()} for d in q.stream()]
 
         reminders = await asyncio.to_thread(_fetch)
@@ -153,8 +144,7 @@ class ToolExecutor:
         }))
         return {"reminder_id": reminder_id, "status": "dismissed"}
 
-    # ─── Calendar ─────────────────────────────────────────────────────────────
-
+    # Calendar
     async def _create_calendar_event(self, inp: dict[str, Any]) -> ToolResult:
         title = str(inp.get("title", "")).strip()
         start_time = str(inp.get("start_time", "")).strip()
@@ -206,8 +196,7 @@ class ToolExecutor:
 
         return await asyncio.to_thread(_fetch)
 
-    # ─── Memory ───────────────────────────────────────────────────────────────
-
+    # Memory
     async def _store_memory(self, inp: dict[str, Any]) -> ToolResult:
         key = str(inp.get("key", "")).strip()
         value = str(inp.get("value", "")).strip()
@@ -220,7 +209,7 @@ class ToolExecutor:
 
         def _upsert() -> str:
             existing = list(
-                self._memories_ref().where("key", "==", key).limit(1).stream()
+                self._memories_ref().where(filter=FieldFilter("key", "==", key)).limit(1).stream()
             )
             if existing:
                 memory_id = existing[0].id
@@ -253,7 +242,7 @@ class ToolExecutor:
         def _search() -> list[dict]:
             q = self._memories_ref()
             if category_filter != "all":
-                q = q.where("category", "==", category_filter)
+                q = q.where(filter=FieldFilter("category", "==", category_filter))
             matches: list[dict] = []
             for doc in q.stream():
                 data = doc.to_dict() or {}
@@ -267,8 +256,7 @@ class ToolExecutor:
         matches = await asyncio.to_thread(_search)
         return {"matches": matches}
 
-    # ─── Nutrition ────────────────────────────────────────────────────────────
-
+    # Nutrition
     async def _analyze_nutrition(self, inp: dict[str, Any]) -> ToolResult:
         ocr_text = str(inp.get("ocr_text", "")).strip()
         if not ocr_text:
@@ -321,8 +309,7 @@ class ToolExecutor:
             "recommendation": recommendation,
         }
 
-    # ─── User context ─────────────────────────────────────────────────────────
-
+    # User context
     async def _get_user_context(self, inp: dict[str, Any]) -> ToolResult:
         include_memories = bool(inp.get("include_memories", True))
         include_reminders = bool(inp.get("include_reminders", True))
@@ -339,7 +326,7 @@ class ToolExecutor:
             context["reminders"] = await asyncio.to_thread(
                 lambda: [
                     {"reminder_id": d.id, **d.to_dict()}
-                    for d in self._reminders_ref().where("status", "==", "pending").stream()
+                    for d in self._reminders_ref().where(filter=FieldFilter("status", "==", "pending")).stream()
                 ]
             )
 
@@ -350,20 +337,19 @@ class ToolExecutor:
         return context
 
 
-# ─── Standalone Firestore helpers (used by scheduler) ────────────────────────
-
+# Standalone Firestore helpers (used by scheduler)
 def fetch_due_reminders() -> list[dict[str, Any]]:
     """Query all users' pending reminders that are due now.
 
     Intentionally synchronous — called via asyncio.to_thread from the scheduler.
-    """
+    """                 
     db = admin_firestore()
     now_iso = datetime.now(timezone.utc).isoformat()
 
     docs = (
         db.collection_group("reminders")
-        .where("status", "==", "pending")
-        .where("trigger_at", "<=", now_iso)
+        .where(filter=FieldFilter("status", "==", "pending"))
+        .where(filter=FieldFilter("trigger_at", "<=", now_iso))
         .stream()
     )
 

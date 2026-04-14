@@ -179,6 +179,49 @@ class FirestoreService {
     );
   }
 
+  /// Fetches one page of documents, returning parsed items plus the last
+  /// [DocumentSnapshot] to use as a cursor for the next page.
+  Future<Result<({List<T> items, DocumentSnapshot? cursor})>>
+      getPaginatedCollection<T>(
+    String collection,
+    T Function(Map<String, dynamic>) fromJson, {
+    Query<Map<String, dynamic>> Function(
+      CollectionReference<Map<String, dynamic>>,
+    )? queryBuilder,
+    DocumentSnapshot? after,
+    required int limit,
+  }) async {
+    final firestore = _firestore;
+    if (firestore == null) {
+      return Result.failure(_firebaseUnavailable());
+    }
+
+    return LatencyTracker.track('firestore_page_$collection', () async {
+      try {
+        final ref = firestore.collection(collection);
+        Query<Map<String, dynamic>> query =
+            queryBuilder != null ? queryBuilder(ref) : ref;
+        if (after != null) query = query.startAfterDocument(after);
+        query = query.limit(limit);
+        final snapshot = await query.get();
+        final items = snapshot.docs
+            .map((doc) => fromJson({'id': doc.id, ...doc.data()}))
+            .toList();
+        final cursor =
+            snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+        return Result.success((items: items, cursor: cursor));
+      } catch (e, st) {
+        AppLogger.error(
+          'Firestore paginated read failed',
+          error: e,
+          stackTrace: st,
+          tag: 'FirestoreService',
+        );
+        return Result.failure(AppException.firestoreRead(e, st));
+      }
+    });
+  }
+
   Future<Result<void>> batchWrite(
     List<({String collection, String docId, Map<String, dynamic> data})> writes,
   ) async {

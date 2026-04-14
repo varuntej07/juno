@@ -108,7 +108,8 @@ async def send_notification(
         ``NotificationResult`` with delivery counts and a list of invalid
         tokens that were auto-deleted from Firestore.
     """
-    # ── 1. Fetch registered tokens ──────────────────────────────────────────
+
+    # 1. Fetch registered tokens
     token_docs: list[dict[str, Any]] = await asyncio.to_thread(
         get_user_tokens, user_id
     )
@@ -127,7 +128,7 @@ async def send_notification(
 
     token_strings: list[str] = [doc["token"] for doc in token_docs]
 
-    # ── 2. Build FCM data payload ────────────────────────────────────────────
+    # 2. Build FCM data payload
     payload: dict[str, str] = {
         "notification_type": notification_type,
         "user_id": user_id,
@@ -135,7 +136,7 @@ async def send_notification(
     if data:
         payload.update(data)
 
-    # ── 3. Build platform-specific message ──────────────────────────────────
+    # 3. Build platform-specific message
     apns_headers: dict[str, str] = {
         "apns-priority": "10" if priority == "high" else "5",
     }
@@ -152,11 +153,6 @@ async def send_notification(
             notification=messaging.AndroidNotification(
                 sound=sound,
                 channel_id=_ANDROID_CHANNEL_ID,
-                notification_priority=(
-                    messaging.AndroidNotificationPriority.HIGH
-                    if priority == "high"
-                    else messaging.AndroidNotificationPriority.DEFAULT
-                ),
             ),
         ),
         apns=messaging.APNSConfig(
@@ -181,12 +177,12 @@ async def send_notification(
         "collapse_key": collapse_key,
     })
 
-    # ── 4. Send via FCM ──────────────────────────────────────────────────────
+    # 4. Send via FCM
     batch_response: messaging.BatchResponse = await asyncio.to_thread(
         admin_messaging().send_each_for_multicast, message
     )
 
-    # ── 5. Collect invalid tokens from FCM response ──────────────────────────
+    # 5. Collect invalid tokens from FCM response
     invalid: list[str] = []
     for idx, response in enumerate(batch_response.responses):
         if response.success:
@@ -204,7 +200,7 @@ async def send_notification(
                 # Normalise: "messaging/registration-token-not-registered"
                 error_code = error_code.split("/")[-1].lower()
 
-        logger.warning("send_notification: token delivery failed", {
+        logger.warn("send_notification: token delivery failed", {
             "user_id": user_id,
             "token_preview": token_strings[idx][:20],
             "error_code": error_code,
@@ -214,7 +210,7 @@ async def send_notification(
         if error_code in INVALID_TOKEN_CODES:
             invalid.append(token_strings[idx])
 
-    # ── 6. Auto-delete permanently invalid tokens ────────────────────────────
+    # 6. Auto-delete permanently invalid tokens
     if invalid:
         await asyncio.to_thread(remove_invalid_tokens, user_id, invalid)
 

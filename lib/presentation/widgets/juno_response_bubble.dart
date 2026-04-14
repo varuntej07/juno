@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/models/chat_message_model.dart';
 import 'flash_alert.dart';
+import 'reminder_card.dart';
 
 /// Callback signatures for bubble actions.
 typedef OnRetry = void Function(String messageId);
@@ -19,6 +20,9 @@ class JunoResponseBubble extends StatefulWidget {
   final OnEdit? onEdit;
   final OnFeedback? onFeedback;
 
+  /// Called when the user taps "View Reminders" on the inline ReminderCard.
+  final VoidCallback? onViewReminders;
+
   const JunoResponseBubble({
     super.key,
     required this.message,
@@ -26,6 +30,7 @@ class JunoResponseBubble extends StatefulWidget {
     this.onRetry,
     this.onEdit,
     this.onFeedback,
+    this.onViewReminders,
   });
 
   @override
@@ -180,7 +185,7 @@ class _JunoResponseBubbleState extends State<JunoResponseBubble> {
       );
     }
 
-    return MarkdownBody(
+    final body = MarkdownBody(
       data: msg.text,
       selectable: true,
       onTapLink: (text, href, title) {
@@ -189,6 +194,23 @@ class _JunoResponseBubbleState extends State<JunoResponseBubble> {
         }
       },
       styleSheet: _markdownStyleSheet(),
+    );
+
+    if (msg.reminderPayload == null) return body;
+
+    // Reminder chip is embedded inside the bubble — feels like part of the
+    // response rather than a separate system card.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        body,
+        const SizedBox(height: 10),
+        ReminderCard(
+          reminder: msg.reminderPayload!,
+          onViewReminders: widget.onViewReminders ?? () {},
+        ),
+      ],
     );
   }
 

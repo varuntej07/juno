@@ -5,6 +5,7 @@ import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/settings_viewmodel.dart';
 import '../../widgets/error_display.dart';
 import '../../widgets/loading_indicator.dart';
+import '../reminders/reminders_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -78,6 +79,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _ReminderLeadTile(
                 minutes: settings?.defaultReminderLeadMinutes ?? 10,
                 onChanged: (v) => settingsVm.setReminderLeadMinutes(v),
+              ),
+              _NavTile(
+                icon: Icons.notifications_outlined,
+                title: 'View Reminders',
+                subtitle: 'See all scheduled and past reminders',
+                onTap: () => Navigator.push(
+                  context,
+                  RemindersScreen.route(context),
+                ),
               ),
 
               _SectionHeader('Account'),
@@ -231,6 +241,69 @@ class _ReminderLeadTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _NavTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: AppColors.accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: AppColors.textTertiary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.textTertiary,
+            ),
+          ],
+        ),
       ),
     );
   }

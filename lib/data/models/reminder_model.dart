@@ -2,6 +2,19 @@ enum ReminderStatus { pending, fired, dismissed, snoozed }
 
 enum ReminderPriority { low, normal, urgent }
 
+/// Centralised status classification — update here when new statuses are added.
+extension ReminderStatusX on ReminderStatus {
+  /// Visible in the "Upcoming" section. Includes [fired] because the
+  /// notification being delivered does NOT mean the user has acknowledged it.
+  bool get isActive =>
+      this == ReminderStatus.pending ||
+      this == ReminderStatus.snoozed ||
+      this == ReminderStatus.fired;
+
+  /// Visible in the "Completed" section — only explicit user dismissal qualifies.
+  bool get isCompleted => this == ReminderStatus.dismissed;
+}
+
 class ReminderModel {
   final String id;
   final String message;
@@ -26,6 +39,44 @@ class ReminderModel {
     this.firedAt,
     this.dismissedAt,
   });
+
+  // Sentinel used by copyWith to distinguish "not provided" from explicit null.
+  static const Object _absent = Object();
+
+  /// Creates a copy with overridden fields.
+  ///
+  /// Nullable fields ([firedAt], [dismissedAt]) use an internal sentinel so
+  /// you can explicitly clear them by passing `null`:
+  /// ```dart
+  /// reminder.copyWith(dismissedAt: null) // clears the field
+  /// reminder.copyWith()                  // keeps the existing value
+  /// ```
+  ReminderModel copyWith({
+    String? id,
+    String? message,
+    DateTime? triggerAt,
+    ReminderStatus? status,
+    ReminderPriority? priority,
+    String? createdVia,
+    int? snoozeCount,
+    DateTime? createdAt,
+    Object? firedAt = _absent,
+    Object? dismissedAt = _absent,
+  }) {
+    return ReminderModel(
+      id: id ?? this.id,
+      message: message ?? this.message,
+      triggerAt: triggerAt ?? this.triggerAt,
+      status: status ?? this.status,
+      priority: priority ?? this.priority,
+      createdVia: createdVia ?? this.createdVia,
+      snoozeCount: snoozeCount ?? this.snoozeCount,
+      createdAt: createdAt ?? this.createdAt,
+      firedAt: firedAt == _absent ? this.firedAt : firedAt as DateTime?,
+      dismissedAt:
+          dismissedAt == _absent ? this.dismissedAt : dismissedAt as DateTime?,
+    );
+  }
 
   factory ReminderModel.fromJson(Map<String, dynamic> json) {
     return ReminderModel(
