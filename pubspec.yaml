@@ -10,46 +10,26 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
   cupertino_icons:
-
-  # State management
-  provider:
-
-  # Firebase
+  provider: 
   firebase_core:
   firebase_auth:
   cloud_firestore:
   firebase_crashlytics:
   firebase_messaging:
   flutter_local_notifications:
-
-  # Auth
   google_sign_in:
-
-  # Network
   http:
   connectivity_plus:
-
-  # Markdown rendering for chat responses
   flutter_markdown_plus:
   url_launcher:
-
-  # Utilities
   uuid:
   intl:
   shared_preferences:
-
-  # Audio — real-time PCM recording + streaming playback
+  flutter_timezone:
   flutter_sound:
-
-  # Camera / image selection for nutrition scanner
   image_picker:
-
-  # Runtime permissions (microphone, camera)
   permission_handler:
-
-  # Local database — persistent chat history
   drift:
   drift_flutter:
   sqlite3_flutter_libs:
@@ -65,6 +45,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    # Drop your "Hey Juno" .ppn file here from Picovoice Console.
+    # Drop your "Hey Buddy" .ppn file here from Picovoice Console.
     # Placeholder: using built-in keyword until custom model is added.
     - assets/wake_word/

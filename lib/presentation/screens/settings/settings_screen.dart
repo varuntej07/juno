@@ -100,12 +100,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _SignOutButton(
-                  onTap: () async {
-                    await context.read<AuthViewModel>().signOut();
-                    if (context.mounted) {
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                    }
-                  },
+                  onTap: () => context.read<AuthViewModel>().signOut(),
                 ),
               ),
 

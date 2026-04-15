@@ -103,7 +103,8 @@ class AuthRepository {
   /// Returns "UTC" if detection fails — the backend handles this gracefully.
   Future<String> _detectTimezone() async {
     try {
-      return await FlutterTimezone.getLocalTimezone();
+      final tz = await FlutterTimezone.getLocalTimezone();
+      return tz.identifier;
     } catch (e) {
       AppLogger.warning(
         'Timezone detection failed, defaulting to UTC',
