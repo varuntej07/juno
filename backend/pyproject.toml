@@ -37,6 +37,9 @@ dependencies = [
     # Google Cloud Tasks (durable delayed job scheduling)
     "google-cloud-tasks>=2.16",
 
+    # RSS feed parsing (daily notification news fallback)
+    "feedparser>=6.0",
+
     # Lambda adapter (for REST handlers deployed to Lambda)
     "mangum>=0.19",
 ]

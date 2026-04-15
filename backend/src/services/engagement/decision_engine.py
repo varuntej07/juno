@@ -1,39 +1,47 @@
 """
 DecisionEngine — pure Python, zero LLM calls.
 
-Decides whether to engage the user, which agent to use, and what tone to strike.
-All rules are hard constraints encoded as logic — not heuristics fed to Claude.
+Decides whether to engage the user after a reactive trigger (nutrition scan or
+calendar event), which agent to use, and what tone to strike.
+
+Habit nudges are NOT handled here — they are planned daily by NotificationPlannerAgent
+in src/services/daily_notification/ which reads actual query history.
 
 Tone selection for nutrition_followup:
     past_scan_count == 0                 → "educate"  (first time, explain)
     1 <= past_scan_count < 3, bad verdict → "warn"    (seen before, heads up)
     past_scan_count >= 3, bad verdict    → "roast"    (they keep doing it)
     verdict == "eat"                     → "celebrate" (good choice)
-    no recent bad scan                   → "check_in"
 
-Rate-limit rules (all checked atomically via Firestore transaction in orchestrator.py):
-    min 2h between any notifications
-    max 3 proactive notifications per day
-    quiet hours: 10pm–8am (UTC; expand when we have user timezone)
-    suppress if last query was < 5min ago (user is active in app)
+Rate-limit rules (all re-checked atomically via Firestore transaction in orchestrator.py):
+    min 2h between any reactive notifications
+    max 2 proactive notifications per day (daily planner owns this budget)
+    quiet hours: 10 PM–8 AM in the user's local timezone
+    suppress if last query was < 5 min ago (user is currently active in the app)
 """
 
 from __future__ import annotations
 
-import random
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .models import EngagementDecision
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
+# These are module-level so orchestrator.py can reference them in its transaction.
 
-_MIN_GAP_HOURS = 2
-_MAX_PROACTIVE_PER_DAY = 3
-_QUIET_HOUR_START = 22   # 10pm UTC
-_QUIET_HOUR_END = 8      # 8am UTC
-_ACTIVE_SESSION_WINDOW_MINUTES = 5
+MIN_HOURS_BETWEEN_REACTIVE_NOTIFICATIONS = 2
+MAX_DAILY_PROACTIVE_NOTIFICATIONS = 2
+SUPPRESS_IF_USER_ACTIVE_WITHIN_MINUTES = 5
+
+QUIET_HOUR_START = 22   # 10 PM in the user's local timezone
+QUIET_HOUR_END = 8      #  8 AM in the user's local timezone
+
+# Fixed delays (seconds) for reactive notification types
+NUTRITION_FOLLOWUP_DELAY_MINUTES = 45
+CALENDAR_PREP_DELAY_MINUTES = 2
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -47,21 +55,22 @@ def decide(
     Pure function. No I/O. Takes assembled context, returns EngagementDecision.
 
     Args:
-        trigger_event:   "nutrition_scan" | "chat_query" | "calendar_event"
-        trigger_payload: raw event data (nutrition log doc, query text, etc.)
+        trigger_event:   "nutrition_scan" | "calendar_event"
+        trigger_payload: raw event data (nutrition log doc or calendar event dict)
         context: {
             recent_nutrition_logs: list[dict],
             dietary_profile: dict | None,
-            engagement_guard: dict | None,   # {last_engaged_at, count_today, guard_date, last_app_interaction_at}
-            upcoming_events: list[dict],
+            engagement_guard: dict | None,
             memories: list[dict],
+            user_timezone: str,               # IANA timezone e.g. "Asia/Kolkata"
         }
     """
     now = datetime.now(timezone.utc)
     guard = context.get("engagement_guard") or {}
+    user_timezone = context.get("user_timezone", "UTC")
 
-    # ── Hard gate: rate-limit checks ─────────────────────────────────────────
-    suppression = _check_suppression(now, guard)
+    # ── Hard gate: rate-limit and quiet-hours checks ──────────────────────────
+    suppression = _check_suppression(now, guard, user_timezone)
     if suppression:
         return EngagementDecision(
             should_engage=False,
@@ -79,9 +88,6 @@ def decide(
     if trigger_event == "calendar_event":
         return _decide_calendar(trigger_payload, context)
 
-    if trigger_event == "chat_query":
-        return _decide_habit(trigger_payload, context)
-
     return EngagementDecision(
         should_engage=False,
         chosen_agent="none",
@@ -94,11 +100,15 @@ def decide(
 
 # ── Suppression checks ────────────────────────────────────────────────────────
 
-def _check_suppression(now: datetime, guard: dict[str, Any]) -> str | None:
+def _check_suppression(now: datetime, guard: dict[str, Any], user_timezone: str) -> str | None:
     """Return a suppression_reason string if we should NOT engage, else None."""
 
-    # Quiet hours (UTC)
-    if _QUIET_HOUR_START <= now.hour or now.hour < _QUIET_HOUR_END:
+    # Quiet hours — checked in the user's own timezone, not UTC
+    try:
+        local_now = now.astimezone(ZoneInfo(user_timezone))
+    except (ZoneInfoNotFoundError, Exception):
+        local_now = now  # fall back to UTC if timezone string is invalid
+    if local_now.hour >= QUIET_HOUR_START or local_now.hour < QUIET_HOUR_END:
         return "quiet_hours"
 
     # User is actively using the app right now
@@ -107,7 +117,7 @@ def _check_suppression(now: datetime, guard: dict[str, Any]) -> str | None:
         try:
             last_dt = datetime.fromisoformat(last_interaction)
             minutes_ago = (now - last_dt).total_seconds() / 60
-            if minutes_ago < _ACTIVE_SESSION_WINDOW_MINUTES:
+            if minutes_ago < SUPPRESS_IF_USER_ACTIVE_WITHIN_MINUTES:
                 return "user_active_in_app"
         except ValueError:
             pass
@@ -118,17 +128,17 @@ def _check_suppression(now: datetime, guard: dict[str, Any]) -> str | None:
         try:
             last_dt = datetime.fromisoformat(last_engaged)
             hours_ago = (now - last_dt).total_seconds() / 3600
-            if hours_ago < _MIN_GAP_HOURS:
+            if hours_ago < MIN_HOURS_BETWEEN_REACTIVE_NOTIFICATIONS:
                 return "too_recent"
         except ValueError:
             pass
 
-    # Daily cap — only proactive (cold) notifications count against the cap;
+    # Daily cap — only proactive (cold) notifications count against this cap;
     # interaction-triggered ones (nutrition scan, calendar) are exempt.
     today = now.date().isoformat()
     if guard.get("guard_date") == today:
-        proactive_count = guard.get("proactive_count_today", 0)
-        if proactive_count >= _MAX_PROACTIVE_PER_DAY:
+        sent_today = guard.get("proactive_notifications_sent_today", 0)
+        if sent_today >= MAX_DAILY_PROACTIVE_NOTIFICATIONS:
             return "daily_cap"
 
     return None
@@ -161,14 +171,8 @@ def _decide_nutrition(
     else:
         tone = "roast"
 
-    # Only engage if there's something worth saying
-    if verdict == "eat" and not concerns:
-        # Good food, no concerns — only engage sometimes to avoid noise
-        # Simple deterministic rule: engage if this is a notably healthy choice
-        # (high protein, low concerns). For now always engage on good verdict.
-        pass
-    elif verdict == "moderate" and past_scans == 0 and not concerns:
-        # First scan, meh food, nothing specific to say — skip
+    # Skip if there's genuinely nothing worth saying
+    if verdict == "moderate" and past_scans == 0 and not concerns:
         return EngagementDecision(
             should_engage=False,
             chosen_agent="none",
@@ -188,7 +192,6 @@ def _decide_nutrition(
         "macros": payload.get("macros", {}),
     }
 
-    # Add dietary background if available
     profile = context.get("dietary_profile") or {}
     if profile:
         engagement_context["dietary_goal"] = profile.get("goal", "")
@@ -198,7 +201,7 @@ def _decide_nutrition(
     return EngagementDecision(
         should_engage=True,
         chosen_agent="nutrition_followup",
-        delay_minutes=_random_delay(30, 60),
+        delay_minutes=NUTRITION_FOLLOWUP_DELAY_MINUTES,
         tone=tone,
         engagement_context=engagement_context,
     )
@@ -206,14 +209,14 @@ def _decide_nutrition(
 
 def _decide_calendar(
     payload: dict[str, Any],
-    context: dict[str, Any],   # reserved: dietary profile / memories used in future
+    context: dict[str, Any],   # reserved for future use (memories, dietary profile)
 ) -> EngagementDecision:
     _ = context
     event_title: str = payload.get("title", "Meeting")
     minutes_until: int = payload.get("minutes_until", 180)
     description: str = payload.get("description", "")
 
-    # Only prep notifications for events within 3 hours
+    # Only send prep notifications for events within the next 3 hours
     if minutes_until > 180:
         return EngagementDecision(
             should_engage=False,
@@ -227,7 +230,7 @@ def _decide_calendar(
     return EngagementDecision(
         should_engage=True,
         chosen_agent="calendar_prep",
-        delay_minutes=2,   # near-immediate for time-sensitive prep
+        delay_minutes=CALENDAR_PREP_DELAY_MINUTES,
         tone="check_in",
         engagement_context={
             "event_title": event_title,
@@ -236,89 +239,3 @@ def _decide_calendar(
             "attendees": payload.get("attendees", []),
         },
     )
-
-
-def _decide_habit(
-    _payload: dict[str, Any],   # reserved: original query text used in future
-    context: dict[str, Any],
-) -> EngagementDecision:
-    """Detect habit signals from query history. Called when trigger_event == 'chat_query'."""
-    signals = _detect_habit_signals(context)
-
-    if not signals:
-        return EngagementDecision(
-            should_engage=False,
-            chosen_agent="none",
-            delay_minutes=0,
-            tone="check_in",
-            engagement_context={},
-            suppression_reason="no_habit_signal",
-        )
-
-    # Pick the strongest signal
-    chosen_signal = max(signals.items(), key=lambda kv: kv[1].get("strength", 0))
-    signal_key, signal_data = chosen_signal
-
-    return EngagementDecision(
-        should_engage=True,
-        chosen_agent="habit_nudge",
-        delay_minutes=_random_delay(45, 90),
-        tone="check_in",
-        engagement_context={
-            "signal": signal_key,
-            **signal_data,
-        },
-    )
-
-
-def _detect_habit_signals(context: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Pure logic — scan query history for nudge-worthy patterns."""
-    queries: list[dict] = context.get("recent_queries", [])
-    now = datetime.now(timezone.utc)
-    signals: dict[str, dict[str, Any]] = {}
-
-    # Pattern: workout intent but no nutrition logging / scan in 5+ days
-    workout_keywords = {"workout", "gym", "exercise", "run", "lift", "training"}
-    workout_queries = [
-        q for q in queries
-        if any(kw in q.get("text", "").lower() for kw in workout_keywords)
-    ]
-    if workout_queries:
-        latest = max(workout_queries, key=lambda q: q.get("timestamp", ""))
-        try:
-            days_since = (now - datetime.fromisoformat(latest["timestamp"])).days
-            if days_since >= 5:
-                signals["workout_intent_inactive"] = {
-                    "days_since": days_since,
-                    "query_count": len(workout_queries),
-                    "strength": min(days_since, 10),
-                }
-        except (ValueError, KeyError):
-            pass
-
-    # Pattern: sleep-related query during late hours (11pm–2am)
-    sleep_keywords = {"sleep", "insomnia", "tired", "rest", "bedtime"}
-    late_sleep_queries = [
-        q for q in queries
-        if any(kw in q.get("text", "").lower() for kw in sleep_keywords)
-        and _is_late_night(q.get("timestamp", ""))
-    ]
-    if len(late_sleep_queries) >= 2:
-        signals["late_night_sleep_concern"] = {
-            "occurrences": len(late_sleep_queries),
-            "strength": len(late_sleep_queries) * 2,
-        }
-
-    return signals
-
-
-def _is_late_night(timestamp_iso: str) -> bool:
-    try:
-        dt = datetime.fromisoformat(timestamp_iso)
-        return dt.hour >= 23 or dt.hour < 3
-    except ValueError:
-        return False
-
-
-def _random_delay(min_minutes: int, max_minutes: int) -> int:
-    return random.randint(min_minutes, max_minutes)

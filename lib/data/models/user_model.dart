@@ -53,6 +53,7 @@ class UserModel {
   final UserSettings settings;
   final DateTime createdAt;
   final DateTime lastActiveAt;
+  final String? timezone;
 
   const UserModel({
     required this.uid,
@@ -62,6 +63,7 @@ class UserModel {
     required this.settings,
     required this.createdAt,
     required this.lastActiveAt,
+    this.timezone,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -75,6 +77,7 @@ class UserModel {
       ),
       createdAt: DateTime.parse(json['created_at'] as String),
       lastActiveAt: DateTime.parse(json['last_active_at'] as String),
+      timezone: json['timezone'] as String?,
     );
   }
 
@@ -86,6 +89,7 @@ class UserModel {
         'settings': settings.toJson(),
         'created_at': createdAt.toUtc().toIso8601String(),
         'last_active_at': lastActiveAt.toUtc().toIso8601String(),
+        'timezone': timezone,
       };
 
   UserModel copyWith({
@@ -94,6 +98,7 @@ class UserModel {
     String? photoUrl,
     UserSettings? settings,
     DateTime? lastActiveAt,
+    String? timezone,
   }) {
     return UserModel(
       uid: uid,
@@ -103,6 +108,7 @@ class UserModel {
       settings: settings ?? this.settings,
       createdAt: createdAt,
       lastActiveAt: lastActiveAt ?? this.lastActiveAt,
+      timezone: timezone ?? this.timezone,
     );
   }
 }

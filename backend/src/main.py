@@ -39,6 +39,11 @@ from .handlers.connectors import (
     sync_google_calendar,
 )
 from .handlers.dietary_profile import handle_get_dietary_profile, handle_save_dietary_profile
+from .handlers.daily_notification import (
+    handle_plan_all_users,
+    handle_plan_one_user,
+    handle_send_nudge,
+)
 from .handlers.engagement import (
     handle_engagement_notify,
     handle_engagement_orchestrate,
@@ -237,6 +242,34 @@ async def engage_notify_endpoint(
 ) -> JSONResponse:
     body = await request.json()
     result = await handle_engagement_notify(body)
+    return JSONResponse(content=result)
+
+
+# Daily notification endpoints (this is internal with Cloud Scheduler + Cloud Tasks only)
+@app.post("/internal/daily-notify/plan-all")
+async def daily_notify_plan_all_endpoint(
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
+    result = await handle_plan_all_users()
+    return JSONResponse(content=result)
+
+
+@app.post("/internal/daily-notify/plan/{user_id}")
+async def daily_notify_plan_user_endpoint(
+    user_id: str,
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
+    result = await handle_plan_one_user(user_id)
+    return JSONResponse(content=result)
+
+
+@app.post("/internal/daily-notify/send")
+async def daily_notify_send_endpoint(
+    request: Request,
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
+    body = await request.json()
+    result = await handle_send_nudge(body)
     return JSONResponse(content=result)
 
 

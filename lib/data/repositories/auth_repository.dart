@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/logging/app_logger.dart';
@@ -40,11 +41,19 @@ class AuthRepository {
 
     return existingResult.when(
       success: (user) async {
-        final updated = user.copyWith(lastActiveAt: DateTime.now());
+        // Detect timezone on every sign-in so it stays accurate if the user travels
+        final timezone = await _detectTimezone();
+        final updated = user.copyWith(
+          lastActiveAt: DateTime.now(),
+          timezone: timezone,
+        );
         await _firestoreService.updateDocument(
           AppConstants.usersCollection,
           firebaseUser.uid,
-          {'last_active_at': DateTime.now().toUtc().toIso8601String()},
+          {
+            'last_active_at': DateTime.now().toUtc().toIso8601String(),
+            'timezone': timezone,
+          },
         );
         return Result.success(updated);
       },
@@ -59,6 +68,7 @@ class AuthRepository {
 
   Future<Result<UserModel>> _createUser(User firebaseUser) async {
     final now = DateTime.now();
+    final timezone = await _detectTimezone();
     final user = UserModel(
       uid: firebaseUser.uid,
       displayName: firebaseUser.displayName ?? 'User',
@@ -67,6 +77,7 @@ class AuthRepository {
       settings: UserSettings.defaults(),
       createdAt: now,
       lastActiveAt: now,
+      timezone: timezone,
     );
 
     AppLogger.info(
@@ -86,6 +97,20 @@ class AuthRepository {
     );
 
     return result;
+  }
+
+  /// Detects the device's IANA timezone string (e.g. "Asia/Kolkata").
+  /// Returns "UTC" if detection fails — the backend handles this gracefully.
+  Future<String> _detectTimezone() async {
+    try {
+      return await FlutterTimezone.getLocalTimezone();
+    } catch (e) {
+      AppLogger.warning(
+        'Timezone detection failed, defaulting to UTC',
+        tag: 'AuthRepository',
+      );
+      return 'UTC';
+    }
   }
 
   Future<Result<UserModel?>> getCurrentUser() async {

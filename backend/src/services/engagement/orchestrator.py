@@ -26,8 +26,11 @@ from google.cloud.firestore_v1.base_query import FieldFilter  # type: ignore
 from ...lib.logger import logger
 from ...services.firebase import admin_firestore
 from .agent_registry import get_agent_registry
-from .decision_engine import decide
-from .models import EngagementAnalyticsEvent
+from .decision_engine import (
+    decide,
+    MIN_HOURS_BETWEEN_REACTIVE_NOTIFICATIONS,
+    MAX_DAILY_PROACTIVE_NOTIFICATIONS,
+)
 from .task_scheduler import get_task_scheduler
 
 
@@ -59,11 +62,12 @@ async def _orchestrate(
     now = datetime.now(timezone.utc)
 
     # Step 1: Load context in parallel
-    nutrition_logs, dietary_profile, engagement_guard, memories = await asyncio.gather(
+    nutrition_logs, dietary_profile, engagement_guard, memories, user_timezone = await asyncio.gather(
         _load_recent_nutrition_logs(user_id),
         _load_dietary_profile(user_id),
         _load_engagement_guard(user_id),
         _load_memories(user_id),
+        _load_user_timezone(user_id),
     )
 
     context: dict[str, Any] = {
@@ -71,7 +75,7 @@ async def _orchestrate(
         "dietary_profile": dietary_profile,
         "engagement_guard": engagement_guard,
         "memories": memories,
-        "recent_queries": [],   # populated on demand in decision_engine for habit detection
+        "user_timezone": user_timezone,
     }
 
     # Step 2: Deterministic decision — zero LLM calls
@@ -190,11 +194,6 @@ def _claim_engagement_slot_sync(
     Returns (claimed, suppression_reason).
     Runs in a thread (blocking Firestore SDK).
     """
-    from ...config.settings import settings  # avoid circular import at module level
-
-    _MIN_GAP_HOURS = 2
-    _MAX_PROACTIVE_PER_DAY = 3
-
     db = admin_firestore()
     guard_ref = (
         db.collection("users")
@@ -214,15 +213,16 @@ def _claim_engagement_slot_sync(
         if last_engaged:
             try:
                 hours_ago = (now - datetime.fromisoformat(last_engaged)).total_seconds() / 3600
-                if hours_ago < _MIN_GAP_HOURS:
+                if hours_ago < MIN_HOURS_BETWEEN_REACTIVE_NOTIFICATIONS:
                     return False, "too_recent"
             except ValueError:
                 pass
 
-        # Daily cap — only proactive engagements count toward the cap
+        # Daily cap — only proactive engagements count toward the cap;
+        # interaction-triggered (scan, calendar) are exempt
         if not is_interaction_triggered:
-            count = guard.get("proactive_count_today", 0) if guard.get("guard_date") == today else 0
-            if count >= _MAX_PROACTIVE_PER_DAY:
+            sent_today = guard.get("proactive_notifications_sent_today", 0) if guard.get("guard_date") == today else 0
+            if sent_today >= MAX_DAILY_PROACTIVE_NOTIFICATIONS:
                 return False, "daily_cap"
 
         # Claim the slot atomically
@@ -231,11 +231,11 @@ def _claim_engagement_slot_sync(
             "guard_date": today,
         }
         if is_interaction_triggered:
-            current = guard.get("interaction_triggered_count_today", 0) if guard.get("guard_date") == today else 0
-            update["interaction_triggered_count_today"] = current + 1
+            current = guard.get("user_action_notifications_sent_today", 0) if guard.get("guard_date") == today else 0
+            update["user_action_notifications_sent_today"] = current + 1
         else:
-            current = guard.get("proactive_count_today", 0) if guard.get("guard_date") == today else 0
-            update["proactive_count_today"] = current + 1
+            current = guard.get("proactive_notifications_sent_today", 0) if guard.get("guard_date") == today else 0
+            update["proactive_notifications_sent_today"] = current + 1
 
         transaction.set(guard_ref, update, merge=True)
         return True, None
@@ -296,6 +296,21 @@ async def _load_engagement_guard(user_id: str) -> dict:
     except Exception as exc:
         logger.warn("orchestrator: engagement_guard load failed", {"error": str(exc)})
         return {}
+
+
+async def _load_user_timezone(user_id: str) -> str:
+    """Returns the user's IANA timezone string, defaulting to 'UTC' if not set."""
+    def _fetch() -> str:
+        db = admin_firestore()
+        doc = db.collection("users").document(user_id).get()
+        if doc.exists:
+            return (doc.to_dict() or {}).get("timezone", "UTC")
+        return "UTC"
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        logger.warn("orchestrator: user_timezone load failed", {"error": str(exc)})
+        return "UTC"
 
 
 async def _load_memories(user_id: str, limit: int = 10) -> list[dict]:
