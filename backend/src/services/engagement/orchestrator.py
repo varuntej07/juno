@@ -23,6 +23,8 @@ from typing import Any
 from google.cloud import firestore as fs  # type: ignore
 from google.cloud.firestore_v1.base_query import FieldFilter  # type: ignore
 
+from langsmith import traceable
+
 from ...lib.logger import logger
 from ...services.firebase import admin_firestore
 from .agent_registry import get_agent_registry
@@ -54,6 +56,7 @@ async def run_orchestration(
 
 # ── Core pipeline ─────────────────────────────────────────────────────────────
 
+@traceable(name="engagement_orchestration", run_type="chain")
 async def _orchestrate(
     user_id: str,
     trigger_event: str,

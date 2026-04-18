@@ -40,6 +40,9 @@ dependencies = [
     # RSS feed parsing (daily notification news fallback)
     "feedparser>=6.0",
 
+    # LangSmith for LLM observability and tracing
+    "langsmith>=0.2",
+
     # Lambda adapter (for REST handlers deployed to Lambda)
     "mangum>=0.19",
 ]

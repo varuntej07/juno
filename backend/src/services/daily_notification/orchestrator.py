@@ -24,6 +24,7 @@ import json
 from datetime import date, datetime, timezone, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from langsmith import traceable
 
 from ...lib.logger import logger
 from ...services.firebase import admin_firestore
@@ -61,7 +62,8 @@ async def run_daily_plan(user_id: str) -> None:
         })
 
 
-# Core pipeline 
+# Core pipeline
+@traceable(name="daily_notification_plan", run_type="chain")
 async def _run(user_id: str) -> None:
     today = date.today().isoformat()
 

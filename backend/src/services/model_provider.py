@@ -29,6 +29,7 @@ import re
 from typing import Any, TypeVar, Type
 
 import anthropic
+from langsmith import traceable
 
 from ..config.settings import settings
 from ..lib.logger import logger
@@ -37,12 +38,12 @@ T = TypeVar("T")
 
 # Model ID prefix → provider name
 _PROVIDER_PREFIXES: dict[str, str] = {
-    "gemini":  "gemini",
-    "claude":  "anthropic",
-    "gpt":     "openai",       # future
-    "sonar":   "perplexity",   # future
-    "o1":      "openai",       # future
-    "o3":      "openai",       # future
+    "gemini": "gemini",
+    "claude": "anthropic",
+    "gpt": "openai",       # future
+    "sonar": "perplexity",   # future
+    "o1": "openai",       # future
+    "o3": "openai",       # future
 }
 
 
@@ -66,9 +67,9 @@ class ModelProvider:
     """
     Tier-based LLM interface. Three tiers, any number of underlying models.
 
-    fast()     → settings.TIER_FAST     (currently gemini-2.5-flash)
-    balanced() → settings.TIER_BALANCED (currently claude-haiku-4-5)
-    smart()    → settings.TIER_SMART    (currently claude-sonnet-4-6)
+    fast() -> settings.TIER_FAST (currently gemini-2.5-flash)
+    balanced() -> settings.TIER_BALANCED (currently claude-haiku-4-5)
+    smart() -> settings.TIER_SMART (currently claude-sonnet-4-6)
 
     When response_model (a Pydantic BaseModel subclass) is given, the raw LLM
     text is parsed as JSON into that model and returned as the typed instance.
@@ -78,8 +79,6 @@ class ModelProvider:
     def __init__(self) -> None:
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._gemini_client: Any = None   # google.genai.Client, lazy
-
-    # ── Tier methods ──────────────────────────────────────────────────────────
 
     async def fast(
         self,
@@ -147,8 +146,6 @@ class ModelProvider:
             temperature=temperature,
         )
 
-    # ── Internal dispatch ─────────────────────────────────────────────────────
-
     async def _call(
         self,
         *,
@@ -188,8 +185,7 @@ class ModelProvider:
             return self._parse_response(raw, response_model)
         return raw
 
-    # ── Provider implementations ──────────────────────────────────────────────
-
+    @traceable(name="gemini_call", run_type="llm")
     async def _call_gemini(
         self,
         *,
@@ -227,6 +223,7 @@ class ModelProvider:
 
         return await asyncio.to_thread(_sync)
 
+    @traceable(name="anthropic_background_call", run_type="llm")
     async def _call_anthropic(
         self,
         *,
@@ -260,8 +257,6 @@ class ModelProvider:
         text_blocks = [b.text for b in response.content if b.type == "text"]
         return " ".join(text_blocks).strip()
 
-    # ── Response parsing ──────────────────────────────────────────────────────
-
     def _parse_response(self, raw: str, response_model: Type[T]) -> T:
         """Parse raw LLM text into a Pydantic model. Strips markdown fences."""
         cleaned = _strip_fences(raw)
@@ -277,8 +272,6 @@ class ModelProvider:
                 f"ModelProvider: could not parse response into {response_model.__name__}: {exc}"
             ) from exc
 
-    # ── Lazy client accessors ─────────────────────────────────────────────────
-
     def _get_anthropic_client(self) -> anthropic.AsyncAnthropic:
         if self._anthropic is None:
             self._anthropic = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -293,8 +286,7 @@ class ModelProvider:
         return self._gemini_client
 
 
-# ── Module-level singleton (same pattern as firebase.py) ─────────────────────
-
+#  Module-level singleton
 _provider: ModelProvider | None = None
 
 

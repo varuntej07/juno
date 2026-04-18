@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 import anthropic
+from langsmith import traceable
 
 from ..config.settings import settings
 from ..lib.logger import logger
@@ -36,6 +37,7 @@ class ClaudeClient:
         self._tool_executor = tool_executor
         self._client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
+    @traceable(name="chat_turn", run_type="chain")
     async def send_text_turn(
         self,
         *,

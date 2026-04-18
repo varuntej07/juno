@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # 10 messages ≈ 1k tokens per request. Tune via env var CHAT_HISTORY_WINDOW.
     CHAT_HISTORY_WINDOW: int = 10
 
+    # LangSmith tracing
+    LANGSMITH_TRACING: str = "false"
+    LANGSMITH_API_KEY: str = ""
+    LANGSMITH_PROJECT: str = "Buddy"
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+
     # Juno personality
     JUNO_DEFAULT_SYSTEM_PROMPT: str = (
         "You are a friendly buddy, a proactive personal assistant that helps with reminders, "
