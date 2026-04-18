@@ -10,6 +10,7 @@ firebase-admin>=6.7
 google-api-python-client>=2.168
 google-auth>=2.40
 google-auth-httplib2>=0.2
+google-genai>=1.0
 mangum>=0.19
 
 [dev]
