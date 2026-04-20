@@ -159,29 +159,50 @@ async def handle_send_nudge(body: dict[str, Any]) -> dict[str, Any]:
 
 # Active user discovery
 async def _fetch_active_user_ids() -> list[str]:
-    """Return user IDs that have at least one FCM token registered in the last 7 days."""
+    """Return user IDs with FCM tokens, skipping users inactive for 7+ days.
+
+    Activity is determined by the most recent query timestamp. Users with no
+    queries at all are assumed active (new accounts).
+    """
     def _fetch() -> list[str]:
-        from datetime import timedelta
         from google.cloud.firestore_v1.base_query import FieldFilter  # type: ignore
 
         db = admin_firestore()
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
-        # Collection group query across all users' fcm_tokens subcollections
-        token_docs = (
-            db.collection_group("fcm_tokens")
-            .where(filter=FieldFilter("registered_at", ">=", cutoff))
-            .stream()
-        )
-
-        # Extract unique user IDs from document paths: users/{uid}/fcm_tokens/{token}
+        # All users with any FCM token, registration date is irrelevant for activity
+        token_docs = db.collection_group("fcm_tokens").stream()
         user_ids: set[str] = set()
         for doc in token_docs:
             path_parts = doc.reference.path.split("/")
             if len(path_parts) >= 2:
-                user_ids.add(path_parts[1])  # users/{uid}/...
+                user_ids.add(path_parts[1])
 
-        return list(user_ids)
+        if not user_ids:
+            return []
+
+        active: list[str] = []
+        for uid in user_ids:
+            recent = (
+                db.collection("users").document(uid)
+                .collection("queries")
+                .where(filter=FieldFilter("timestamp", ">=", cutoff))
+                .limit(1)
+                .stream()
+            )
+            if any(True for _ in recent):
+                active.append(uid)
+            else:
+                # No queries ever: might be a new account, so include it
+                no_queries = not any(
+                    True for _ in
+                    db.collection("users").document(uid)
+                    .collection("queries").limit(1).stream()
+                )
+                if no_queries:
+                    active.append(uid)
+
+        return active
 
     try:
         return await asyncio.to_thread(_fetch)
