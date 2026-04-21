@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .chat import handle_chat_request
+from fastapi.responses import StreamingResponse
+
+from .chat import handle_chat_stream
 
 
-async def handle_notification_reply_request(event: dict[str, Any]) -> dict[str, Any]:
-    return await handle_chat_request(event)
+async def handle_notification_reply_request(event: dict[str, Any]) -> StreamingResponse:
+    return await handle_chat_stream(event)

@@ -10,6 +10,7 @@ import '../../core/logging/app_logger.dart';
 import '../../core/network/connectivity_service.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/chat_message_model.dart';
+import '../../data/models/clarification_payload.dart';
 import '../../data/models/voice_models.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/services/chat_backup_service.dart';
@@ -42,6 +43,7 @@ class HomeViewModel extends SafeChangeNotifier {
   StreamSubscription<ConnectivityStatus>? _connectivitySubscription;
   StreamSubscription<VoiceServerEvent>? _voiceEventsSubscription;
   StreamSubscription<EngagementTapPayload>? _engagementTapSubscription;
+  StreamSubscription<ChatStreamEvent>? _chatSub;
 
   ViewState _state = ViewState.idle;
   MicState _micState = MicState.idle;
@@ -50,7 +52,10 @@ class HomeViewModel extends SafeChangeNotifier {
   final List<ChatMessageModel> _messages = [];
   List<ChatSession> _sessions = const [];
   bool _isOffline = false;
-  String _streamingAssistantText = '';
+  String _streamingAssistantText = ''; // voice only
+  bool _isStreaming = false;           // text chat SSE active
+  String _streamingText = '';          // text chat accumulated delta
+  String? _thinkingMessage;            // last tool_thinking message
   String? _activeVoiceSessionId;
   String? _currentSessionId;
   String? _currentUserId;
@@ -97,6 +102,9 @@ class HomeViewModel extends SafeChangeNotifier {
   List<ChatSession> get sessions => List.unmodifiable(_sessions);
   bool get isOffline => _isOffline;
   String get streamingAssistantText => _streamingAssistantText;
+  bool get isStreaming => _isStreaming;
+  String get streamingText => _streamingText;
+  String? get thinkingMessage => _thinkingMessage;
   String? get currentSessionId => _currentSessionId;
   bool get hasActiveVoiceSession =>
       _voiceStatus != VoiceSessionStatus.disconnected &&
@@ -139,8 +147,13 @@ class HomeViewModel extends SafeChangeNotifier {
     if (hasActiveVoiceSession) {
       await cancelVoiceSession();
     }
+    _chatSub?.cancel();
+    _chatSub = null;
     _messages.clear();
     _streamingAssistantText = '';
+    _isStreaming = false;
+    _streamingText = '';
+    _thinkingMessage = null;
     _error = null;
     await _openNewSession();
     _setState(ViewState.idle);
@@ -305,7 +318,7 @@ class HomeViewModel extends SafeChangeNotifier {
       unawaited(_persistSessionTitle(_currentSessionId!, title));
     }
 
-    await _sendAndHandleResponse(trimmed, userMsg);
+    _sendStreamingResponse(trimmed, userMsg);
   }
 
   /// Retries the last failed response. Finds the user message that preceded
@@ -336,7 +349,7 @@ class HomeViewModel extends SafeChangeNotifier {
     safeNotifyListeners();
 
     _setState(ViewState.loading);
-    await _sendAndHandleResponse(userMsg.text, userMsg);
+    _sendStreamingResponse(userMsg.text, userMsg);
   }
 
   /// Edits a user message: updates its text, deletes all messages after it,
@@ -369,7 +382,7 @@ class HomeViewModel extends SafeChangeNotifier {
 
     // Re-send
     _setState(ViewState.loading);
-    await _sendAndHandleResponse(newText, updatedMsg);
+    _sendStreamingResponse(newText, updatedMsg);
   }
 
   /// Toggles feedback on an assistant message.
@@ -542,9 +555,14 @@ class HomeViewModel extends SafeChangeNotifier {
   }
 
   Future<void> _loadSession(String sessionId) async {
+    _chatSub?.cancel();
+    _chatSub = null;
     _currentSessionId = sessionId;
     _messages.clear();
     _streamingAssistantText = '';
+    _isStreaming = false;
+    _streamingText = '';
+    _thinkingMessage = null;
 
     ChatSession? session;
     for (final item in _sessions) {
@@ -689,83 +707,156 @@ class HomeViewModel extends SafeChangeNotifier {
     }
   }
 
-  /// Shared helper: send user message to API and handle success/failure.
-  /// Extracts the duplicated pattern from sendMessage, retryLastResponse,
-  /// and editAndResend.
-  Future<void> _sendAndHandleResponse(
-    String text,
-    ChatMessageModel userMsg,
+  /// Streams the assistant response via SSE and updates UI incrementally.
+  void _sendStreamingResponse(String text, ChatMessageModel userMsg) {
+    _isStreaming = true;
+    _streamingText = '';
+    _thinkingMessage = null;
+    _chatSub?.cancel();
+
+    _chatSub = _lambdaService
+        .sendMessageStream(
+          text,
+          _currentUserId!,
+          history: _buildHistory(exclude: userMsg),
+          sessionId: _currentSessionId,
+          clientMessageId: userMsg.id,
+        )
+        .listen(
+      (event) {
+        switch (event) {
+          case TextDeltaEvent(:final delta):
+            _streamingText += delta;
+            safeNotifyListeners();
+
+          case ToolThinkingEvent(:final message):
+            _thinkingMessage = message;
+            safeNotifyListeners();
+
+          case ClarificationUiEvent(
+              :final clarificationId,
+              :final question,
+              :final options,
+              :final multiSelect,
+            ):
+            _isStreaming = false;
+            _streamingText = '';
+            _thinkingMessage = null;
+            final clarMsg = ChatMessageModel(
+              id: _uuid.v4(),
+              text: '',
+              isUser: false,
+              timestamp: DateTime.now(),
+              channel: ChatMessageChannel.text,
+              sessionId: _currentSessionId,
+              clarificationPayload: ClarificationPayload(
+                clarificationId: clarificationId,
+                question: question,
+                options: options,
+                multiSelect: multiSelect,
+              ),
+            );
+            unawaited(_persistMessage(clarMsg));
+            _error = null;
+            _setState(ViewState.loaded);
+
+          case DoneEvent(:final metadata, :final awaitingClarification):
+            if (awaitingClarification) return;
+            _isStreaming = false;
+            final reminderJson =
+                metadata?['reminder'] as Map<String, dynamic>?;
+            final assistantMsg = ChatMessageModel(
+              id: _uuid.v4(),
+              text: _streamingText,
+              isUser: false,
+              timestamp: DateTime.now(),
+              channel: ChatMessageChannel.text,
+              sessionId: _currentSessionId,
+              reminderPayload: reminderJson != null
+                  ? ReminderPayload.fromJson(reminderJson)
+                  : null,
+            );
+            _streamingText = '';
+            _thinkingMessage = null;
+            unawaited(_persistMessage(assistantMsg));
+            _error = null;
+            _setState(ViewState.loaded);
+            ErrorHandler.logBreadcrumb('message_sent');
+
+          case ErrorStreamEvent(:final message):
+            _isStreaming = false;
+            _streamingText = '';
+            _thinkingMessage = null;
+            final error = AppException.unexpected(message);
+            final errorMsg = ChatMessageModel(
+              id: _uuid.v4(),
+              text: '',
+              isUser: false,
+              timestamp: DateTime.now(),
+              channel: ChatMessageChannel.text,
+              sessionId: _currentSessionId,
+              status: MessageStatus.error,
+              errorReason: _userFriendlyError(error),
+            );
+            unawaited(_persistMessage(errorMsg));
+            _error = error;
+            _setState(ViewState.error);
+            AppLogger.warning(
+              'Stream error event: $message',
+              tag: 'HomeVM',
+            );
+        }
+      },
+      onError: (Object e, StackTrace st) {
+        ErrorHandler.handle(e, st);
+        _isStreaming = false;
+        _streamingText = '';
+        _thinkingMessage = null;
+        final exc = AppException.unexpected(e.toString(), error: e, stackTrace: st);
+        final errorMsg = ChatMessageModel(
+          id: _uuid.v4(),
+          text: '',
+          isUser: false,
+          timestamp: DateTime.now(),
+          channel: ChatMessageChannel.text,
+          sessionId: _currentSessionId,
+          status: MessageStatus.error,
+          errorReason: _userFriendlyError(exc),
+        );
+        unawaited(_persistMessage(errorMsg));
+        _error = exc;
+        _setState(ViewState.error);
+      },
+    );
+  }
+
+  /// Called when the user taps options on a [ClarificationCard].
+  /// Marks the card as answered (read-only), then sends the selected options
+  /// as a new user message to continue the conversation.
+  Future<void> submitClarification(
+    String clarificationId,
+    List<String> selectedOptions,
   ) async {
-    try {
-      final result = await _lambdaService.sendMessage(
-        text,
-        _currentUserId!,
-        history: _buildHistory(exclude: userMsg),
-        sessionId: _currentSessionId,
-        // userMsg.id is the Drift UUID generated once when the message is first
-        // created. Passing it here makes retries idempotent — the backend uses it
-        // as the Firestore doc ID for the query log (upsert, not new insert).
-        clientMessageId: userMsg.id,
+    if (_currentUserId == null || selectedOptions.isEmpty) return;
+
+    // Mark clarification card as answered in local state + DB
+    final msgIndex = _messages.indexWhere(
+      (m) => m.clarificationPayload?.clarificationId == clarificationId,
+    );
+    if (msgIndex >= 0) {
+      final updated = _messages[msgIndex].copyWith(
+        clarificationPayload: () => _messages[msgIndex]
+            .clarificationPayload
+            ?.copyWith(selectedOptions: () => selectedOptions),
       );
-
-      await result.when(
-        success: (response) async {
-          final assistantMsg = ChatMessageModel(
-            id: _uuid.v4(),
-            text: response.text,
-            isUser: false,
-            timestamp: DateTime.now(),
-            channel: ChatMessageChannel.text,
-            sessionId: _currentSessionId,
-            reminderPayload: response.reminderPayload,
-          );
-
-          final savedAssistantMessage = await _persistMessage(assistantMsg);
-          if (!savedAssistantMessage) return;
-
-          _error = null;
-          _setState(ViewState.loaded);
-          ErrorHandler.logBreadcrumb('message_sent');
-        },
-        failure: (error) async {
-          // Create an error assistant message with the failure reason
-          final errorMsg = ChatMessageModel(
-            id: _uuid.v4(),
-            text: '',
-            isUser: false,
-            timestamp: DateTime.now(),
-            channel: ChatMessageChannel.text,
-            sessionId: _currentSessionId,
-            status: MessageStatus.error,
-            errorReason: _userFriendlyError(error),
-          );
-
-          await _persistMessage(errorMsg);
-          _error = error;
-          _setState(ViewState.error);
-          AppLogger.error('Send message failed', error: error, tag: 'HomeVM');
-        },
-      );
-    } catch (e, st) {
-      ErrorHandler.handle(e, st);
-
-      final errorMsg = ChatMessageModel(
-        id: _uuid.v4(),
-        text: '',
-        isUser: false,
-        timestamp: DateTime.now(),
-        channel: ChatMessageChannel.text,
-        sessionId: _currentSessionId,
-        status: MessageStatus.error,
-        errorReason: _userFriendlyError(
-          AppException.unexpected(e.toString(), error: e, stackTrace: st),
-        ),
-      );
-      await _persistMessage(errorMsg);
-
-      _error = AppException.unexpected(e.toString(), error: e, stackTrace: st);
-      _setState(ViewState.error);
+      _messages[msgIndex] = updated;
+      safeNotifyListeners();
+      unawaited(_chatRepository.saveMessage(updated, userId: _currentUserId));
     }
+
+    // Send user's answer as a plain text message
+    final answerText = selectedOptions.join(', ');
+    await sendMessage(answerText, _currentUserId!);
   }
 
   List<Map<String, String>> _buildHistory({ChatMessageModel? exclude}) {
@@ -821,6 +912,7 @@ class HomeViewModel extends SafeChangeNotifier {
     _connectivitySubscription?.cancel();
     _voiceEventsSubscription?.cancel();
     _engagementTapSubscription?.cancel();
+    _chatSub?.cancel();
     unawaited(_wakeWordService.stop());
     unawaited(_voiceSessionService.dispose());
     super.dispose();

@@ -150,6 +150,47 @@ class ApiClient {
     }
   }
 
+  /// Opens a streaming POST, decodes SSE, and yields each raw `data:` payload
+  /// string. Strips `data: ` prefix; filters `[DONE]` sentinel and empty lines.
+  /// Throws [AppException] / [NetworkException] on non-2xx status.
+  Stream<String> streamPost(
+    String path,
+    Map<String, dynamic> body,
+  ) async* {
+    final url = Uri.parse('${Environment.current.apiBaseUrl}$path');
+    final headers = await _headers();
+    headers['Accept'] = 'text/event-stream';
+
+    final request = http.Request('POST', url)
+      ..headers.addAll(headers)
+      ..body = jsonEncode(body);
+
+    final client = http.Client();
+    try {
+      final streamedResponse = await client.send(request);
+
+      if (streamedResponse.statusCode < 200 || streamedResponse.statusCode >= 300) {
+        AppLogger.network(
+          'POST-STREAM', url.toString(), streamedResponse.statusCode, Duration.zero,
+        );
+        throw NetworkException.fromStatusCode(streamedResponse.statusCode, '');
+      }
+
+      AppLogger.network('POST-STREAM', url.toString(), streamedResponse.statusCode, Duration.zero);
+
+      await for (final line in streamedResponse.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        if (line.startsWith('data: ')) {
+          final data = line.substring(6).trim();
+          if (data.isNotEmpty && data != '[DONE]') yield data;
+        }
+      }
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> _backoffDelay(int attempt) async {
     final delay = Duration(
       milliseconds: AppConstants.retryBaseDelay.inMilliseconds * (1 << attempt),

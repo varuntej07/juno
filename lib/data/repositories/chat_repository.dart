@@ -7,6 +7,7 @@ import '../../core/errors/app_exception.dart';
 import '../../core/network/api_response.dart';
 import '../local/app_database.dart';
 import '../models/chat_message_model.dart';
+import '../models/clarification_payload.dart';
 import '../services/chat_backup_service.dart';
 import '../services/lambda_api_service.dart';
 
@@ -104,6 +105,8 @@ class ChatRepository {
                 engagementId: Value(msg.engagementId),
                 engagementAgent: Value(msg.engagementAgent),
                 reminderJson: Value(msg.reminderPayload?.toJsonString()),
+                clarificationJson:
+                    Value(msg.clarificationPayload?.toJsonString()),
               ),
             );
 
@@ -352,6 +355,8 @@ class ChatRepository {
       engagementId: row.engagementId,
       engagementAgent: row.engagementAgent,
       reminderPayload: ReminderPayload.tryFromJsonString(row.reminderJson),
+      clarificationPayload:
+          ClarificationPayload.tryFromJsonString(row.clarificationJson),
     );
   }
 }

@@ -30,6 +30,7 @@ from typing import Any, TypeVar, Type
 
 import anthropic
 from langsmith import traceable
+from langsmith.wrappers import wrap_anthropic
 
 from ..config.settings import settings
 from ..lib.logger import logger
@@ -274,7 +275,7 @@ class ModelProvider:
 
     def _get_anthropic_client(self) -> anthropic.AsyncAnthropic:
         if self._anthropic is None:
-            self._anthropic = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+            self._anthropic = wrap_anthropic(anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY))
         return self._anthropic
 
     def _get_gemini_client(self) -> Any:

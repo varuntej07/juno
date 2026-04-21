@@ -24,12 +24,12 @@ import uuid
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.id_token import verify_oauth2_token
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from mangum import Mangum
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config.settings import settings
-from .handlers.chat import handle_chat_request
+from .handlers.chat import handle_chat_stream
 from .handlers.devices import register_device
 from .handlers.connectors import (
     connect_google_calendar,
@@ -152,11 +152,10 @@ async def devices_register_endpoint(request: Request) -> JSONResponse:
 
 
 @app.post("/chat")
-async def chat_endpoint(request: Request) -> JSONResponse:
+async def chat_endpoint(request: Request) -> StreamingResponse:
     body = await request.body()
     event = _to_lambda_event(request, body)
-    result = await handle_chat_request(event)
-    return _lambda_response(result)
+    return await handle_chat_stream(event)
 
 
 @app.post("/nutrition/scan")

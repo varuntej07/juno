@@ -50,6 +50,7 @@ class ToolExecutor:
             "query_memory": self._query_memory,
             "analyze_nutrition": self._analyze_nutrition,
             "get_user_context": self._get_user_context,
+            "ask_clarification": self._ask_clarification,
         }
         handler = dispatch.get(tool_name)
         if handler is None:
@@ -307,6 +308,16 @@ class ToolExecutor:
             "quantity": quantity,
             "concerns": concerns,
             "recommendation": recommendation,
+        }
+
+    # Clarification (chat-only — returns sentinel dict, not a Firestore call)
+    async def _ask_clarification(self, inp: dict[str, Any]) -> ToolResult:
+        return {
+            "__clarification__": True,
+            "clarification_id": str(uuid4()),
+            "question": str(inp.get("question", "")).strip(),
+            "options": [str(o) for o in inp.get("options", [])],
+            "multi_select": bool(inp.get("multi_select", False)),
         }
 
     # User context

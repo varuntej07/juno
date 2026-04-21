@@ -169,7 +169,37 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "ask_clarification",
+        "description": (
+            "Ask the user a clarifying question with 2–5 selectable options instead of free text. "
+            "Use when the user's request is ambiguous and you need one specific piece of information "
+            "to proceed accurately. Do NOT use for open-ended follow-ups or general conversation."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The clarifying question to ask."},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "2–5 options for the user to choose from.",
+                    "minItems": 2,
+                    "maxItems": 5,
+                },
+                "multi_select": {
+                    "type": "boolean",
+                    "description": "Whether the user can select multiple options.",
+                    "default": False,
+                },
+            },
+            "required": ["question", "options"],
+        },
+    },
 ]
+
+# Tools that only make sense in text chat (excluded from Nova Sonic voice)
+_SONIC_EXCLUDED_TOOLS = {"ask_clarification"}
 
 
 # ─── Nova Sonic format ────────────────────────────────────────────────────────
@@ -186,11 +216,12 @@ def sonic_tool_configuration() -> dict[str, Any]:
                 }
             }
             for t in TOOL_DEFINITIONS
+            if t["name"] not in _SONIC_EXCLUDED_TOOLS
         ]
     }
 
 
-# ─── Claude (Anthropic SDK) format ───────────────────────────────────────────
+# Claude (Anthropic SDK) format 
 
 def claude_tool_definitions() -> list[dict[str, Any]]:
     """Format tool definitions for the Anthropic messages API."""

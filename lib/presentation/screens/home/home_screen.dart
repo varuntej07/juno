@@ -9,10 +9,11 @@ import '../../../data/models/chat_message_model.dart';
 import '../../../data/models/voice_models.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/home_viewmodel.dart';
+import '../../widgets/clarification_card.dart';
 import '../../widgets/error_display.dart';
 import '../../widgets/juno_response_bubble.dart';
 import '../../widgets/juno_text_field.dart';
-import '../../widgets/loading_indicator.dart';
+import '../../widgets/streaming_message_bubble.dart';
 import '../reminders/reminders_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -143,6 +144,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     Navigator.push(context, RemindersScreen.route(context));
   }
 
+  void _handleClarificationSubmit(String clarificationId, List<String> options) {
+    final homeVm = context.read<HomeViewModel>();
+    homeVm.submitClarification(clarificationId, options);
+    _scrollToBottom();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -172,7 +179,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: Consumer<HomeViewModel>(
                 builder: (context, vm, _) {
-                  if (vm.messages.isEmpty && vm.streamingAssistantText.isEmpty) {
+                  // Auto-scroll while streaming text arrives
+                  if (vm.isStreaming) {
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => _scrollToBottom());
+                  }
+
+                  if (vm.messages.isEmpty &&
+                      vm.streamingAssistantText.isEmpty &&
+                      !vm.isStreaming) {
                     return _EmptyState(
                       pulseAnimation: _pulseAnimation,
                       micState: vm.micState,
@@ -186,11 +201,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     messages: vm.messages,
                     streamingAssistantText: vm.streamingAssistantText,
                     scrollController: _scrollController,
-                    isLoading: vm.state == ViewState.loading,
+                    isStreaming: vm.isStreaming,
+                    streamingText: vm.streamingText,
+                    thinkingMessage: vm.thinkingMessage,
                     onRetry: _handleRetry,
                     onEdit: _handleEdit,
                     onFeedback: _handleFeedback,
                     onViewReminders: _handleViewReminders,
+                    onClarificationSubmit: _handleClarificationSubmit,
                   );
                 },
               ),
@@ -491,29 +509,37 @@ class _MessageList extends StatelessWidget {
   final List<ChatMessageModel> messages;
   final String streamingAssistantText;
   final ScrollController scrollController;
-  final bool isLoading;
+  final bool isStreaming;
+  final String streamingText;
+  final String? thinkingMessage;
   final OnRetry onRetry;
   final OnEdit onEdit;
   final OnFeedback onFeedback;
   final VoidCallback onViewReminders;
+  final void Function(String clarificationId, List<String> options)
+      onClarificationSubmit;
 
   const _MessageList({
     required this.messages,
     required this.streamingAssistantText,
     required this.scrollController,
-    required this.isLoading,
+    required this.isStreaming,
+    required this.streamingText,
     required this.onRetry,
     required this.onEdit,
     required this.onFeedback,
     required this.onViewReminders,
+    required this.onClarificationSubmit,
+    this.thinkingMessage,
   });
 
   @override
   Widget build(BuildContext context) {
     final draftVisible = streamingAssistantText.trim().isNotEmpty;
-    final totalItems = messages.length + (isLoading ? 1 : 0) + (draftVisible ? 1 : 0);
+    final totalItems =
+        messages.length + (isStreaming ? 1 : 0) + (draftVisible ? 1 : 0);
 
-    // Find the index of the last assistant message for retry visibility
+    // Find the last assistant message index for retry visibility
     int lastAssistantIndex = -1;
     for (var i = messages.length - 1; i >= 0; i--) {
       if (!messages[i].isUser) {
@@ -529,6 +555,18 @@ class _MessageList extends StatelessWidget {
       itemBuilder: (context, index) {
         if (index < messages.length) {
           final msg = messages[index];
+
+          // Clarification card — renders tappable option chips
+          if (msg.clarificationPayload != null) {
+            return ClarificationCard(
+              payload: msg.clarificationPayload!,
+              onSubmit: (options) => onClarificationSubmit(
+                msg.clarificationPayload!.clarificationId,
+                options,
+              ),
+            );
+          }
+
           return JunoResponseBubble(
             message: msg,
             isLastAssistantMessage: index == lastAssistantIndex,
@@ -539,8 +577,19 @@ class _MessageList extends StatelessWidget {
           );
         }
 
-        final afterMessagesIndex = index - messages.length;
-        if (draftVisible && afterMessagesIndex == 0) {
+        final afterIndex = index - messages.length;
+
+        // Text chat streaming bubble (SSE)
+        if (isStreaming && afterIndex == 0) {
+          return StreamingMessageBubble(
+            streamingText: streamingText,
+            thinkingMessage: thinkingMessage,
+            isLoading: true,
+          );
+        }
+
+        // Voice draft bubble (Nova Sonic)
+        if (draftVisible && afterIndex == (isStreaming ? 1 : 0)) {
           return JunoResponseBubble(
             message: ChatMessageModel(
               id: 'draft',
@@ -552,13 +601,7 @@ class _MessageList extends StatelessWidget {
           );
         }
 
-        return const Padding(
-          padding: EdgeInsets.all(12),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: LoadingIndicator(size: 20),
-          ),
-        );
+        return const SizedBox.shrink();
       },
     );
   }

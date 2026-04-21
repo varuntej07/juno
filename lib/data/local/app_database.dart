@@ -36,6 +36,8 @@ class ChatMessages extends Table {
   TextColumn get engagementAgent => text().nullable()();
   // v5: reminder payload JSON — set when assistant called set_reminder this turn
   TextColumn get reminderJson => text().nullable()();
+  // v6: clarification payload JSON — set when assistant called ask_clarification
+  TextColumn get clarificationJson => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -58,7 +60,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -148,6 +150,11 @@ class AppDatabase extends _$AppDatabase {
           if (from < 5) {
             await customStatement(
               'ALTER TABLE "chat_messages" ADD COLUMN "reminder_json" TEXT',
+            );
+          }
+          if (from < 6) {
+            await customStatement(
+              'ALTER TABLE "chat_messages" ADD COLUMN "clarification_json" TEXT',
             );
           }
         },

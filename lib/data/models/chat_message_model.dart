@@ -1,4 +1,5 @@
 import '../services/lambda_api_service.dart';
+import 'clarification_payload.dart';
 
 enum ChatMessageChannel { text, voice }
 
@@ -27,6 +28,10 @@ class ChatMessageModel {
   /// Drives the inline ReminderCard widget in chat.
   final ReminderPayload? reminderPayload;
 
+  /// Non-null when the assistant used ask_clarification. Drives the
+  /// ClarificationCard widget; becomes read-only once selectedOptions is set.
+  final ClarificationPayload? clarificationPayload;
+
   const ChatMessageModel({
     required this.id,
     required this.text,
@@ -40,6 +45,7 @@ class ChatMessageModel {
     this.engagementId,
     this.engagementAgent,
     this.reminderPayload,
+    this.clarificationPayload,
   });
 
   // ── Serialisation ─────────────────────────────────────────────────────────
@@ -71,6 +77,9 @@ class ChatMessageModel {
       reminderPayload: ReminderPayload.tryFromJsonString(
         map['reminder_json'] as String?,
       ),
+      clarificationPayload: ClarificationPayload.tryFromJsonString(
+        map['clarification_json'] as String?,
+      ),
     );
   }
 
@@ -87,6 +96,8 @@ class ChatMessageModel {
         if (engagementId != null) 'engagement_id': engagementId,
         if (engagementAgent != null) 'engagement_agent': engagementAgent,
         if (reminderPayload != null) 'reminder_json': reminderPayload!.toJsonString(),
+        if (clarificationPayload != null)
+          'clarification_json': clarificationPayload!.toJsonString(),
       };
 
   /// Serialises to the `{role, content}` shape expected by the Claude /chat
@@ -94,7 +105,9 @@ class ChatMessageModel {
   /// conversational turns.
   Map<String, String> toHistoryTurn() => {
         'role': isUser ? 'user' : 'assistant',
-        'content': text,
+        // For clarification messages, send the question text so Claude has context
+        // without the options array (which is UI-only).
+        'content': clarificationPayload?.question ?? text,
       };
 
   // ── Value equality ────────────────────────────────────────────────────────
@@ -124,6 +137,7 @@ class ChatMessageModel {
     String? engagementId,
     String? engagementAgent,
     ReminderPayload? Function()? reminderPayload,
+    ClarificationPayload? Function()? clarificationPayload,
   }) {
     return ChatMessageModel(
       id: id ?? this.id,
@@ -139,6 +153,9 @@ class ChatMessageModel {
       engagementAgent: engagementAgent ?? this.engagementAgent,
       reminderPayload:
           reminderPayload != null ? reminderPayload() : this.reminderPayload,
+      clarificationPayload: clarificationPayload != null
+          ? clarificationPayload()
+          : this.clarificationPayload,
     );
   }
 
