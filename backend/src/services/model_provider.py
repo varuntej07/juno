@@ -25,6 +25,7 @@ Provider routing is inferred from the model ID prefix:
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 from typing import Any, TypeVar, Type
 
@@ -37,7 +38,18 @@ from ..lib.logger import logger
 
 T = TypeVar("T")
 
-# Model ID prefix → provider name
+_MAX_RETRIES = 3
+_BASE_DELAY_S = 1.0  # exponential backoff: 1s, 2s, 4s
+_TIMEOUT_S = 30.0    # per-call budget for background LLM work
+
+# Anthropic exceptions that are worth retrying (transient / server-side)
+_ANTHROPIC_RETRYABLE = (
+    anthropic.RateLimitError,        # 429
+    anthropic.APIConnectionError,    # network blip (includes APITimeoutError)
+    anthropic.InternalServerError,   # 500 / 529
+)
+
+# Model ID prefix -> provider name
 _PROVIDER_PREFIXES: dict[str, str] = {
     "gemini": "gemini",
     "claude": "anthropic",
@@ -222,7 +234,51 @@ class ModelProvider:
             )
             return resp.text or ""
 
-        return await asyncio.to_thread(_sync)
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                return await asyncio.wait_for(asyncio.to_thread(_sync), timeout=_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                if attempt == _MAX_RETRIES:
+                    logger.exception("ModelProvider: Gemini timeout after retries", {
+                        "model": model_id,
+                        "prompt_len": len(prompt),
+                        "attempt": attempt,
+                        "timeout_s": _TIMEOUT_S,
+                    })
+                    raise
+                delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                logger.warn("ModelProvider: Gemini timeout, backing off", {
+                    "model": model_id,
+                    "attempt": attempt,
+                    "delay_s": round(delay, 2),
+                })
+                await asyncio.sleep(delay)
+            except Exception as exc:
+                # google-genai raises APIError subclasses with an HTTP `.code` attribute
+                code = getattr(exc, "code", None)
+                retryable = code == 429 or (isinstance(code, int) and 500 <= code < 600)
+                if not retryable or attempt == _MAX_RETRIES:
+                    logger.exception("ModelProvider: Gemini call failed", {
+                        "model": model_id,
+                        "prompt_len": len(prompt),
+                        "attempt": attempt,
+                        "error_type": type(exc).__name__,
+                        "code": code,
+                        "error": str(exc),
+                    })
+                    raise
+                delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                logger.warn("ModelProvider: Gemini retryable error, backing off", {
+                    "model": model_id,
+                    "attempt": attempt,
+                    "delay_s": round(delay, 2),
+                    "error_type": type(exc).__name__,
+                    "code": code,
+                    "error": str(exc),
+                })
+                await asyncio.sleep(delay)
+        # retry loop always returns or raises; this line is unreachable
+        raise RuntimeError("ModelProvider: Gemini retry loop exited unexpectedly")
 
     @traceable(name="anthropic_background_call", run_type="llm")
     async def _call_anthropic(
@@ -253,10 +309,51 @@ class ModelProvider:
         if tools:
             kwargs["tools"] = tools
 
-        response = await client.messages.create(**kwargs)
-
-        text_blocks = [b.text for b in response.content if b.type == "text"]
-        return " ".join(text_blocks).strip()
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                response = await asyncio.wait_for(
+                    client.messages.create(**kwargs),
+                    timeout=_TIMEOUT_S,
+                )
+                text_blocks = [b.text for b in response.content if b.type == "text"]
+                return " ".join(text_blocks).strip()
+            except asyncio.TimeoutError:
+                if attempt == _MAX_RETRIES:
+                    logger.exception("ModelProvider: Anthropic timeout after retries", {
+                        "model": model_id,
+                        "prompt_len": len(prompt),
+                        "attempt": attempt,
+                        "timeout_s": _TIMEOUT_S,
+                    })
+                    raise
+                delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                logger.warn("ModelProvider: Anthropic timeout, backing off", {
+                    "model": model_id,
+                    "attempt": attempt,
+                    "delay_s": round(delay, 2),
+                })
+                await asyncio.sleep(delay)
+            except _ANTHROPIC_RETRYABLE as exc:
+                if attempt == _MAX_RETRIES:
+                    logger.exception("ModelProvider: Anthropic call failed after retries", {
+                        "model": model_id,
+                        "prompt_len": len(prompt),
+                        "attempt": attempt,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    })
+                    raise
+                delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                logger.warn("ModelProvider: Anthropic retryable error, backing off", {
+                    "model": model_id,
+                    "attempt": attempt,
+                    "delay_s": round(delay, 2),
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                })
+                await asyncio.sleep(delay)
+        # retry loop always returns or raises; this line is unreachable
+        raise RuntimeError("ModelProvider: Anthropic retry loop exited unexpectedly")
 
     def _parse_response(self, raw: str, response_model: Type[T]) -> T:
         """Parse raw LLM text into a Pydantic model. Strips markdown fences."""
@@ -275,7 +372,10 @@ class ModelProvider:
 
     def _get_anthropic_client(self) -> anthropic.AsyncAnthropic:
         if self._anthropic is None:
-            self._anthropic = wrap_anthropic(anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY))
+            self._anthropic = wrap_anthropic(anthropic.AsyncAnthropic(
+                api_key=settings.ANTHROPIC_API_KEY,
+                timeout=_TIMEOUT_S,
+            ))
         return self._anthropic
 
     def _get_gemini_client(self) -> Any:

@@ -22,6 +22,7 @@ from .tool_executor import ToolExecutor
 _MAX_TURNS = 6
 _MAX_RETRIES = 3
 _BASE_DELAY_S = 1.0  # exponential backoff: 1s, 2s, 4s
+_REQUEST_TIMEOUT_S = 30.0  # per-request HTTP timeout; APITimeoutError is retryable via APIConnectionError
 
 # Anthropic exceptions that are worth retrying (transient / server-side)
 _RETRYABLE_ERRORS = (
@@ -49,7 +50,10 @@ _TOOL_STATUS_MESSAGES: dict[str, str] = {
 class ClaudeClient:
     def __init__(self, tool_executor: ToolExecutor) -> None:
         self._tool_executor = tool_executor
-        self._client = wrap_anthropic(anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY))
+        self._client = wrap_anthropic(anthropic.AsyncAnthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            timeout=_REQUEST_TIMEOUT_S,
+        ))
 
     @traceable(name="chat_turn", run_type="chain")
     async def send_text_turn(

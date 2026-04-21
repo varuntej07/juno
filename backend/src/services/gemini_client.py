@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import re
 import time
 import uuid
@@ -21,6 +22,9 @@ from typing import Any
 
 from ..config.settings import settings
 from ..lib.logger import logger
+
+_MAX_RETRIES = 3
+_BASE_DELAY_S = 1.0  # exponential backoff: 1s, 2s, 4s
 
 
 # Data classes returned to callers
@@ -180,7 +184,7 @@ class GeminiClient:
 
     def _call_sync(self, contents: list) -> str:
         last_exc: Exception | None = None
-        for attempt in range(3):
+        for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 response = self._client.models.generate_content(
                     model=settings.GEMINI_MODEL,
@@ -189,12 +193,29 @@ class GeminiClient:
                 )
                 return response.text or ""
             except Exception as exc:
-                err_str = str(exc)
-                if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
-                    last_exc = exc
-                    time.sleep(2 ** attempt)  # 1s, 2s, 4s
-                    continue
-                raise
+                # google-genai raises APIError subclasses with an HTTP `.code` attribute
+                code = getattr(exc, "code", None)
+                retryable = code == 429 or (isinstance(code, int) and 500 <= code < 600)
+                if not retryable or attempt == _MAX_RETRIES:
+                    logger.error("Gemini call failed", {
+                        "model": settings.GEMINI_MODEL,
+                        "attempt": attempt,
+                        "error_type": type(exc).__name__,
+                        "code": code,
+                        "error": str(exc),
+                    })
+                    raise
+                last_exc = exc
+                delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                logger.warn("Gemini retryable error, backing off", {
+                    "model": settings.GEMINI_MODEL,
+                    "attempt": attempt,
+                    "delay_s": round(delay, 2),
+                    "error_type": type(exc).__name__,
+                    "code": code,
+                    "error": str(exc),
+                })
+                time.sleep(delay)
         raise last_exc  # type: ignore[misc]
 
     async def _call(self, contents: list) -> str:
