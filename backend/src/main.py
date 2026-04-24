@@ -269,6 +269,9 @@ async def daily_notify_send_endpoint(
 ) -> JSONResponse:
     body = await request.json()
     result = await handle_send_nudge(body)
+    # plan_not_found may be transient Firestore propagation lag — 500 lets Cloud Tasks retry
+    if result.get("error") == "plan_not_found":
+        return JSONResponse(content=result, status_code=500)
     return JSONResponse(content=result)
 
 

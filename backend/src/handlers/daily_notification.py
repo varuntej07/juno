@@ -134,13 +134,31 @@ async def handle_send_nudge(body: dict[str, Any]) -> dict[str, Any]:
         collapse_key=f"daily_nudge_{nudge_slot}",
     )
 
-    sent_at = datetime.now(timezone.utc).isoformat()
+    attempted_at = datetime.now(timezone.utc).isoformat()
 
-    # Update the daily_plan document
-    await _update_nudge_status(user_id, plan_date, nudge_slot, "sent", sent_at)
+    if result.tokens_targeted == 0:
+        logger.warn("daily_notification: nudge not delivered — no registered FCM tokens", {
+            "user_id": user_id,
+            "nudge_slot": nudge_slot,
+            "plan_date": plan_date,
+        })
+        await _update_nudge_status(user_id, plan_date, nudge_slot, "no_tokens", attempted_at)
+        return {"status": "no_tokens", "tokens_targeted": 0, "success_count": 0}
 
-    # Update engagement_guard so other systems know a notification was sent
-    await _update_engagement_guard(user_id, sent_at)
+    if result.success_count == 0:
+        logger.warn("daily_notification: nudge delivery failed — all tokens rejected by FCM", {
+            "user_id": user_id,
+            "nudge_slot": nudge_slot,
+            "plan_date": plan_date,
+            "tokens_targeted": result.tokens_targeted,
+            "failure_count": result.failure_count,
+        })
+        await _update_nudge_status(user_id, plan_date, nudge_slot, "failed", attempted_at)
+        return {"status": "failed", "tokens_targeted": result.tokens_targeted, "success_count": 0}
+
+    # At least one device received it
+    await _update_nudge_status(user_id, plan_date, nudge_slot, "sent", attempted_at)
+    await _update_engagement_guard(user_id, attempted_at)
 
     logger.info("daily_notification: nudge sent", {
         "user_id": user_id,

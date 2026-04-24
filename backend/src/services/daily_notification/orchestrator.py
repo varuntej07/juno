@@ -139,14 +139,32 @@ async def _run(user_id: str) -> None:
         })
         plan = _make_safe_default_plan(news_items, user_timezone)
 
+    # Recompute send_at_utc from the verifier-validated local times.
+    # The LLM's UTC conversion is unreliable; derive it deterministically so the
+    # Cloud Tasks schedule_time always matches what the verifier approved.
+    morning_utc = _local_hhmm_to_utc(plan.morning_nudge.send_at_local_time, user_timezone)
+    evening_utc = _local_hhmm_to_utc(plan.evening_nudge.send_at_local_time, user_timezone)
+    plan = DailyPlan(
+        morning_nudge=plan.morning_nudge.model_copy(update={"send_at_utc": morning_utc}),
+        evening_nudge=plan.evening_nudge.model_copy(update={"send_at_utc": evening_utc}),
+        plan_source=plan.plan_source,
+    )
+
     # Step 9: Write daily_plans/{today}
     await _write_daily_plan(user_id, today, plan, retry_count, rejection_feedback)
 
     # Step 10: Schedule two Cloud Tasks
-    await asyncio.gather(
-        _schedule_nudge_send(user_id, today, "morning_nudge", plan.morning_nudge.send_at_utc),
-        _schedule_nudge_send(user_id, today, "evening_nudge", plan.evening_nudge.send_at_utc),
-    )
+    try:
+        await asyncio.gather(
+            _schedule_nudge_send(user_id, today, "morning_nudge", plan.morning_nudge.send_at_utc),
+            _schedule_nudge_send(user_id, today, "evening_nudge", plan.evening_nudge.send_at_utc),
+        )
+    except Exception:
+        logger.exception("daily_notification: plan written but send tasks could not be scheduled", {
+            "user_id": user_id,
+            "date": today,
+        })
+        return
 
     logger.info("daily_notification: plan scheduled", {
         "user_id": user_id,
@@ -154,6 +172,8 @@ async def _run(user_id: str) -> None:
         "plan_source": plan.plan_source,
         "morning_topic": plan.morning_nudge.topic,
         "evening_topic": plan.evening_nudge.topic,
+        "morning_send_utc": morning_utc,
+        "evening_send_utc": evening_utc,
         "retry_count": retry_count,
     })
 
@@ -413,6 +433,7 @@ async def _schedule_nudge_send(
             "nudge_slot": nudge_slot,
             "error": str(exc),
         })
+        raise
 
 
 # Context extraction helpers 
