@@ -9,7 +9,7 @@ import '../local/app_database.dart';
 import '../models/chat_message_model.dart';
 import '../models/clarification_payload.dart';
 import '../services/chat_backup_service.dart';
-import '../services/lambda_api_service.dart';
+import '../services/backend_api_service.dart';
 
 class ChatRepository {
   final AppDatabase _db;

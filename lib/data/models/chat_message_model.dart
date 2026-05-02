@@ -1,4 +1,4 @@
-import '../services/lambda_api_service.dart';
+import '../services/backend_api_service.dart';
 import 'clarification_payload.dart';
 
 enum ChatMessageChannel { text, voice }

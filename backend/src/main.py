@@ -3,7 +3,7 @@ Juno backend — FastAPI application.
 
 Routes:
   GET  /health -> liveness probe
-  WebSocket /voice/stream -> real-time Nova Sonic voice session
+  GET  /voice/token -> LiveKit room token for Flutter client
   POST /chat -> text conversation (Claude)
   POST /nutrition/analyze -> OCR nutrition analysis
   POST /notification-reply -> notification reply -> chat
@@ -17,15 +17,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 import uuid
 
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.id_token import verify_oauth2_token
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from mangum import Mangum
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config.settings import settings
@@ -52,10 +50,11 @@ from .handlers.engagement import (
 from .handlers.notification_reply import handle_notification_reply_request
 from .handlers.nutrition import handle_nutrition_analyze_request, handle_nutrition_scan_request
 from .handlers.scheduler import handle_scheduler_tick
+from livekit.api import AccessToken, VideoGrants
+
 from .lib.logger import logger
 from .services.gemini_client import get_gemini_client
 from .services.request_auth import decode_firebase_claims
-from .voice_gateway.ws_handler import voice_stream_handler
 
 app = FastAPI(title="Juno Backend", version="1.0.0")
 
@@ -109,15 +108,30 @@ async def health() -> dict[str, bool]:
     return {"ok": True}
 
 
-# Voice Gateway
-@app.websocket("/voice/stream")
-async def voice_stream(ws: WebSocket) -> None:
-    await voice_stream_handler(ws)
+@app.get("/voice/token")
+async def voice_token(request: Request) -> JSONResponse:
+    """Return a LiveKit room token for the authenticated user."""
+    claims = decode_firebase_claims(request.headers)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user_id: str = claims.get("uid") or claims.get("sub") or ""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    room_name = f"voice-{user_id}"
+    token = (
+        AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+        .with_identity(user_id)
+        .with_name(user_id)
+        .with_grants(VideoGrants(room_join=True, room=room_name))
+        .to_jwt()
+    )
+    return JSONResponse({"token": token, "url": settings.LIVEKIT_URL, "room": room_name})
 
 
 # REST endpoints
-def _to_lambda_event(request: Request, body: bytes) -> dict:
-    """Convert FastAPI Request into a Lambda-style event dict."""
+def _to_handler_event(request: Request, body: bytes) -> dict:
+    """Convert FastAPI request data into the legacy handler event shape."""
     claims = decode_firebase_claims(request.headers) or {}
     return {
         "body": body.decode("utf-8"),
@@ -132,9 +146,9 @@ def _to_lambda_event(request: Request, body: bytes) -> dict:
     }
 
 
-def _lambda_response(result: dict) -> JSONResponse:
+def _handler_response(result: dict) -> JSONResponse:
     """
-    Lambda-style handlers return {"statusCode": int, "body": str}.
+    Legacy handlers return {"statusCode": int, "body": str}.
     result["body"] is already a JSON string — parse it back to a dict so
     JSONResponse doesn't double-encode it into a JSON-wrapped string.
     """
@@ -154,47 +168,47 @@ async def devices_register_endpoint(request: Request) -> JSONResponse:
 @app.post("/chat")
 async def chat_endpoint(request: Request) -> StreamingResponse:
     body = await request.body()
-    event = _to_lambda_event(request, body)
+    event = _to_handler_event(request, body)
     return await handle_chat_stream(event)
 
 
 @app.post("/nutrition/scan")
 async def nutrition_scan_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
-    event = _to_lambda_event(request, body)
+    event = _to_handler_event(request, body)
     result = await handle_nutrition_scan_request(event)
-    return _lambda_response(result)
+    return _handler_response(result)
 
 
 @app.post("/nutrition/analyze")
 async def nutrition_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
-    event = _to_lambda_event(request, body)
+    event = _to_handler_event(request, body)
     result = await handle_nutrition_analyze_request(event)
-    return _lambda_response(result)
+    return _handler_response(result)
 
 
 @app.get("/nutrition/profile")
 async def nutrition_profile_get_endpoint(request: Request) -> JSONResponse:
-    event = _to_lambda_event(request, b"")
+    event = _to_handler_event(request, b"")
     result = await handle_get_dietary_profile(event)
-    return _lambda_response(result)
+    return _handler_response(result)
 
 
 @app.post("/nutrition/profile")
 async def nutrition_profile_save_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
-    event = _to_lambda_event(request, body)
+    event = _to_handler_event(request, body)
     result = await handle_save_dietary_profile(event)
-    return _lambda_response(result)
+    return _handler_response(result)
 
 
 @app.post("/notification-reply")
 async def notification_reply_endpoint(request: Request) -> JSONResponse:
     body = await request.body()
-    event = _to_lambda_event(request, body)
+    event = _to_handler_event(request, body)
     result = await handle_notification_reply_request(event)
-    return _lambda_response(result)
+    return _handler_response(result)
 
 
 _CLOUD_RUN_AUDIENCE = "https://juno-backend-620715294422.us-central1.run.app"
@@ -220,7 +234,7 @@ async def scheduler_tick_endpoint(
     _: None = Depends(_verify_scheduler_token),
 ) -> JSONResponse:
     result = await handle_scheduler_tick()
-    return _lambda_response(result)
+    return _handler_response(result)
 
 
 # Engagement endpoints (internal — Cloud Tasks only)
@@ -269,7 +283,8 @@ async def daily_notify_send_endpoint(
 ) -> JSONResponse:
     body = await request.json()
     result = await handle_send_nudge(body)
-    return JSONResponse(content=result)
+    status_code = result.pop("status_code", 200)
+    return JSONResponse(content=result, status_code=status_code)
 
 
 @app.post("/internal/engage/responded")
@@ -317,8 +332,11 @@ def _check_env() -> None:
     checks = {
         "ANTHROPIC_API_KEY": bool(settings.ANTHROPIC_API_KEY),
         "ANTHROPIC_MODEL": settings.ANTHROPIC_MODEL,
-        "AWS_REGION": bool(settings.AWS_REGION),
-        "BEDROCK_MODEL": settings.BEDROCK_SONIC_MODEL_ID,
+        "LIVEKIT_URL": bool(settings.LIVEKIT_URL),
+        "LIVEKIT_API_KEY": bool(settings.LIVEKIT_API_KEY),
+        "LIVEKIT_CONFIGURED": settings.livekit_configured,
+        "DEEPGRAM_API_KEY": bool(settings.DEEPGRAM_API_KEY),
+        "CARTESIA_API_KEY": bool(settings.CARTESIA_API_KEY),
         "GOOGLE_CALENDAR": settings.google_calendar_configured,
         "GOOGLE_CALENDAR_WEBHOOK_URL": bool(settings.GOOGLE_CALENDAR_WEBHOOK_URL),
         "GEMINI_API_KEY": settings.gemini_configured,
@@ -326,26 +344,12 @@ def _check_env() -> None:
         "ENV": settings.ENV,
     }
 
-    # AWS credential sources (precedence order)
-    aws_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-    aws_role = os.environ.get("AWS_ROLE_ARN", "")
-    aws_profile = os.environ.get("AWS_PROFILE", "")
-    if aws_key:
-        checks["AWS_CREDS"] = f"env key ...{aws_key[-4:]}"
-    elif aws_role:
-        checks["AWS_CREDS"] = f"role {aws_role}"
-    elif aws_profile:
-        checks["AWS_CREDS"] = f"profile {aws_profile}"
-    else:
-        checks["AWS_CREDS"] = "default chain (~/.aws)"
-
     logger.info("Juno backend starting", checks)
 
-    # Warn on missing critical keys
     if not settings.ANTHROPIC_API_KEY:
         logger.warn("ANTHROPIC_API_KEY is not set — /chat will fail")
-    if not aws_key and not aws_role and not aws_profile:
-        logger.warn("No explicit AWS credentials found — Bedrock will use ~/.aws/credentials or IAM role")
+    if not settings.livekit_configured:
+        logger.warn("LiveKit not fully configured, voice sessions will fail...")
 
 
 @app.on_event("startup")
@@ -360,12 +364,6 @@ async def on_startup() -> None:
         logger.warn("Gemini client pre-warm failed — nutrition scan will init lazily", {
             "error": str(exc),
         })
-
-
-# Lambda adapter
-# Use `handler` as the Lambda function entrypoint for REST-only deployments.
-# The WebSocket /voice/stream route must run on a persistent server.
-handler = Mangum(app, lifespan="off")
 
 
 if __name__ == "__main__":

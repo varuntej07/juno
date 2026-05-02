@@ -15,10 +15,8 @@ import '../../data/models/voice_models.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/services/chat_backup_service.dart';
 import '../../data/services/feedback_service.dart';
-import '../../data/services/lambda_api_service.dart';
+import '../../data/services/backend_api_service.dart';
 import '../../data/services/notification_service.dart';
-import '../../data/services/voice_capture_service.dart';
-import '../../data/services/voice_playback_service.dart';
 import '../../data/services/voice_session_service.dart';
 import '../../data/services/wake_word_service.dart';
 import 'view_state.dart';
@@ -28,11 +26,9 @@ export 'view_state.dart';
 enum MicState { idle, listening, processing }
 
 class HomeViewModel extends SafeChangeNotifier {
-  final LambdaApiService _lambdaService;
+  final BackendApiService _backendService;
   final ConnectivityService _connectivityService;
   final VoiceSessionService _voiceSessionService;
-  final VoiceCaptureService _voiceCaptureService;
-  final VoicePlaybackService _voicePlaybackService;
   final WakeWordService _wakeWordService;
   final ChatRepository _chatRepository;
   final ChatBackupService _chatBackupService;
@@ -62,21 +58,17 @@ class HomeViewModel extends SafeChangeNotifier {
   bool _sessionTitleSet = false;
 
   HomeViewModel({
-    required LambdaApiService lambdaService,
+    required BackendApiService backendService,
     required ConnectivityService connectivityService,
     required VoiceSessionService voiceSessionService,
-    required VoiceCaptureService voiceCaptureService,
-    required VoicePlaybackService voicePlaybackService,
     required WakeWordService wakeWordService,
     required ChatRepository chatRepository,
     required ChatBackupService chatBackupService,
     required FeedbackService feedbackService,
     required NotificationService notificationService,
-  })  : _lambdaService = lambdaService,
+  })  : _backendService = backendService,
         _connectivityService = connectivityService,
         _voiceSessionService = voiceSessionService,
-        _voiceCaptureService = voiceCaptureService,
-        _voicePlaybackService = voicePlaybackService,
         _wakeWordService = wakeWordService,
         _chatRepository = chatRepository,
         _chatBackupService = chatBackupService,
@@ -110,8 +102,8 @@ class HomeViewModel extends SafeChangeNotifier {
       _voiceStatus != VoiceSessionStatus.disconnected &&
       _voiceStatus != VoiceSessionStatus.ended &&
       _voiceStatus != VoiceSessionStatus.error;
+  bool get isVoiceCaptureAvailable => hasActiveVoiceSession;
   String? get activeVoiceSessionId => _activeVoiceSessionId;
-  bool get isVoiceCaptureAvailable => _voiceCaptureService.isSupported;
 
   Future<void> initSession(String? userId) async {
     _currentUserId = _normalizeUserId(userId);
@@ -197,7 +189,7 @@ class HomeViewModel extends SafeChangeNotifier {
     await _refreshSessions();
 
     // Tell backend the user responded — cancels pending re-engagement tasks
-    unawaited(_lambdaService.markEngagementResponded(engagementId));
+    unawaited(_backendService.markEngagementResponded(engagementId));
 
     AppLogger.info(
       'Engagement chat loaded',
@@ -239,11 +231,7 @@ class HomeViewModel extends SafeChangeNotifier {
 
     await result.when(
       success: (_) async {
-        if (_voiceCaptureService.isSupported) {
-          await _voiceCaptureService.start((audioBytes) {
-            unawaited(_voiceSessionService.sendAudioChunk(audioBytes));
-          });
-        }
+        // LiveKit WebRTC handles mic capture automatically after setMicrophoneEnabled(true)
         ErrorHandler.logBreadcrumb('voice_session_started', metadata: {'userId': userId});
       },
       failure: (error) async {
@@ -257,31 +245,11 @@ class HomeViewModel extends SafeChangeNotifier {
 
   Future<void> stopVoiceSession() async {
     if (!hasActiveVoiceSession) return;
-
-    await _voiceCaptureService.stop();
-    _voiceStatus = VoiceSessionStatus.processing;
-    _micState = MicState.processing;
-    safeNotifyListeners();
-
-    final result = await _voiceSessionService.endInput();
-    result.when(
-      success: (_) {
-        ErrorHandler.logBreadcrumb(
-          'voice_session_input_ended',
-          metadata: {'sessionId': _activeVoiceSessionId},
-        );
-      },
-      failure: (error) {
-        _error = error;
-        _voiceStatus = VoiceSessionStatus.error;
-        _micState = MicState.idle;
-        safeNotifyListeners();
-      },
-    );
+    // LiveKit VAD handles turn-taking; "stop" ends the session entirely.
+    await cancelVoiceSession();
   }
 
   Future<void> cancelVoiceSession() async {
-    await _voiceCaptureService.stop();
     await _voiceSessionService.close();
     _resetVoiceSessionState();
     safeNotifyListeners();
@@ -440,11 +408,8 @@ class HomeViewModel extends SafeChangeNotifier {
     safeNotifyListeners();
 
     final sendResult = await _voiceSessionService.sendTextInput(text);
-    final endResult = await _voiceSessionService.endInput();
-
-    final sendError = sendResult.errorOrNull ?? endResult.errorOrNull;
-    if (sendError != null) {
-      _error = sendError;
+    if (sendResult.errorOrNull != null) {
+      _error = sendResult.errorOrNull;
       _voiceStatus = VoiceSessionStatus.error;
       _micState = MicState.idle;
       safeNotifyListeners();
@@ -475,9 +440,7 @@ class HomeViewModel extends SafeChangeNotifier {
       case 'session.ready':
         _activeVoiceSessionId = event.sessionId;
         _voiceStatus = VoiceSessionStatus.ready;
-        _micState = _voiceCaptureService.isSupported
-            ? MicState.listening
-            : MicState.processing;
+        _micState = MicState.listening;
         _error = null;
         safeNotifyListeners();
         break;
@@ -508,15 +471,6 @@ class HomeViewModel extends SafeChangeNotifier {
         _streamingAssistantText = '';
         _state = ViewState.loaded;
         safeNotifyListeners();
-        break;
-      case 'assistant.audio.chunk':
-        unawaited(
-          _voicePlaybackService.enqueueAudio(
-            audioBase64: event.audioBase64 ?? '',
-            mimeType: event.mimeType ?? 'audio/lpcm',
-            sampleRateHertz: event.sampleRateHertz,
-          ),
-        );
         break;
       case 'tool.call':
         ErrorHandler.logBreadcrumb(
@@ -714,7 +668,7 @@ class HomeViewModel extends SafeChangeNotifier {
     _thinkingMessage = null;
     _chatSub?.cancel();
 
-    _chatSub = _lambdaService
+    _chatSub = _backendService
         .sendMessageStream(
           text,
           _currentUserId!,

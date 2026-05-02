@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Load .env into os.environ FIRST before pydantic-settings instantiates and before Firebase / AWS SDK initialise. 
+# Load .env into os.environ FIRST before pydantic-settings instantiates.
 # Safe to call multiple times; subsequent calls are no-ops.
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"), override=True)
 
@@ -20,10 +20,20 @@ class Settings(BaseSettings):
     # Environment
     ENV: str = "development"
 
-    # AWS / Bedrock
-    AWS_REGION: str = "us-east-1"
-    BEDROCK_SONIC_MODEL_ID: str = "us.amazon.nova-2-sonic-v1:0"
-    BEDROCK_SONIC_VOICE: str = "matthew"
+    # LiveKit
+    LIVEKIT_URL: str = ""
+    LIVEKIT_API_KEY: str = ""
+    LIVEKIT_API_SECRET: str = ""
+
+    # Deepgram STT
+    DEEPGRAM_API_KEY: str = ""
+
+    # Cartesia TTS
+    CARTESIA_API_KEY: str = ""
+
+    # Voice agent timeouts
+    VOICE_TOOL_TIMEOUT_S: float = 5.0      # per-tool Firestore call budget
+    VOICE_CONNECT_TIMEOUT_S: float = 10.0  # LiveKit room.connect() budget
 
     # Voice gateway
     VOICE_GATEWAY_PORT: int = 8000
@@ -81,11 +91,19 @@ class Settings(BaseSettings):
     LANGSMITH_PROJECT: str = "Buddy"
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
 
-    # Juno personality
+    # Juno personality — text chat
     JUNO_DEFAULT_SYSTEM_PROMPT: str = (
         "You are a friendly buddy, a proactive personal assistant that helps with reminders, "
         "scheduling, memory, and nutrition. Be warm, brief, and conversational. "
         "Never use emojis in your responses."
+    )
+
+    # Voice persona — casual, punchy, friend-mode
+    VOICE_PROMPT: str = (
+        "You're the user's best friend 'Buddy', living in their phone. "
+        "Talk like you're texting a close mate, casual, punchy, zero corporate fluff. "
+        "Swear freely when it fits the vibe. Never say 'certainly', 'of course', or 'I'd be happy to'. "
+        "Be direct, get shit done, and make it fun. Keep responses short, this is a voice call, not an essay."
     )
 
     @field_validator("VOICE_GATEWAY_TEMPERATURE", "VOICE_GATEWAY_TOP_P")
@@ -96,6 +114,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENV == "production"
+
+    @property
+    def livekit_configured(self) -> bool:
+        return bool(self.LIVEKIT_URL and self.LIVEKIT_API_KEY and self.LIVEKIT_API_SECRET)
 
     @property
     def google_calendar_configured(self) -> bool:

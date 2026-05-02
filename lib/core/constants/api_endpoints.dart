@@ -4,7 +4,6 @@ class ApiEndpoints {
   ApiEndpoints._();
 
   static String get baseUrl => Environment.current.apiBaseUrl;
-  static String get wsBaseUrl => Environment.current.wsBaseUrl;
 
   // REST endpoints
   static String get chat => '$baseUrl/chat';
@@ -17,6 +16,6 @@ class ApiEndpoints {
   // Device / push notification token registration
   static String get deviceRegister => '$baseUrl/devices/register';
 
-  // WebSocket
-  static String get voiceStream => '$wsBaseUrl/voice/stream';
+  // Voice session returns LiveKit room token for the Flutter client
+  static String get voiceToken => '$baseUrl/voice/token';
 }

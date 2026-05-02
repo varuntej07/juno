@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../data/services/lambda_api_service.dart';
+import '../../data/services/backend_api_service.dart';
 
 /// Compact inline chip embedded at the bottom of an assistant bubble when the
 /// assistant called set_reminder. Shows message + time + live countdown.

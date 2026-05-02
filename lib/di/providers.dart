@@ -15,11 +15,9 @@ import '../data/services/feedback_service.dart';
 import '../data/services/firebase_auth_service.dart';
 import '../data/services/firestore_service.dart';
 import '../data/services/google_calendar_connector_service.dart';
-import '../data/services/lambda_api_service.dart';
+import '../data/services/backend_api_service.dart';
 import '../data/services/notification_service.dart';
 import '../data/services/nutrition_scan_service.dart';
-import '../data/services/voice_capture_service.dart';
-import '../data/services/voice_playback_service.dart';
 import '../data/services/voice_session_service.dart';
 import '../data/services/wake_word_service.dart';
 import '../presentation/viewmodels/auth_viewmodel.dart';
@@ -30,7 +28,7 @@ import '../presentation/viewmodels/nutrition_scan_viewmodel.dart';
 import '../presentation/viewmodels/settings_viewmodel.dart';
 
 List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
-  // ── Infrastructure ─────────────────────────────────────────────────────────
+  // Infrastructure
   final firebaseAuthService = FirebaseAuthService();
   final firestoreService = FirestoreService();
   final connectivityService = ConnectivityService();
@@ -39,7 +37,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     tokenProvider: firebaseAuthService.getIdToken,
   );
 
-  // ── Local database (singleton — lives for the lifetime of the app) ─────────
+  // Local database (singleton: lives for the lifetime of the app)
   final appDatabase = AppDatabase();
   final chatBackupService = ChatBackupService(db: appDatabase);
   final feedbackService = FeedbackService();
@@ -48,8 +46,8 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     chatBackupService: chatBackupService,
   );
 
-  // ── Remote services ────────────────────────────────────────────────────────
-  final lambdaApiService = LambdaApiService(
+  // Remote services
+  final backendApiService = BackendApiService(
     apiClient: apiClient,
     useStub: !Environment.hasConfiguredApi,
   );
@@ -63,12 +61,9 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     tokenProvider: firebaseAuthService.getIdToken,
   );
 
-  // Real audio services — PCM streaming via flutter_sound
-  final voiceCaptureService = FlutterSoundCaptureService();
-  final voicePlaybackService = FlutterSoundPlaybackService();
   final wakeWordService = WakeWordService();
 
-  // ── Domain repositories ────────────────────────────────────────────────────
+  // Domain repositories
   final authRepository = AuthRepository(
     authService: firebaseAuthService,
     firestoreService: firestoreService,
@@ -93,14 +88,12 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
 
     // Remote services
     Provider<NotificationService>.value(value: notificationService),
-    Provider<LambdaApiService>.value(value: lambdaApiService),
+    Provider<BackendApiService>.value(value: backendApiService),
     Provider<NutritionScanService>.value(value: nutritionScanService),
     Provider<GoogleCalendarConnectorService>.value(
       value: googleCalendarConnectorService,
     ),
     Provider<VoiceSessionService>.value(value: voiceSessionService),
-    Provider<VoiceCaptureService>.value(value: voiceCaptureService),
-    Provider<VoicePlaybackService>.value(value: voicePlaybackService),
     Provider<WakeWordService>.value(value: wakeWordService),
 
     // Domain repositories
@@ -117,11 +110,9 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     ),
     ChangeNotifierProvider<HomeViewModel>(
       create: (_) => HomeViewModel(
-        lambdaService: lambdaApiService,
+        backendService: backendApiService,
         connectivityService: connectivityService,
         voiceSessionService: voiceSessionService,
-        voiceCaptureService: voiceCaptureService,
-        voicePlaybackService: voicePlaybackService,
         wakeWordService: wakeWordService,
         chatRepository: chatRepository,
         chatBackupService: chatBackupService,

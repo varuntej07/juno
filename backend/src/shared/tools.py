@@ -1,11 +1,11 @@
 """
-Tool definitions shared between Nova Sonic and Claude.
-Schema is identical to the TS version — Flutter and Bedrock never see a change.
+Tool definitions for the Claude text chat endpoint (Anthropic SDK format).
+The LiveKit voice agent uses @function_tool decorated methods on BuddyAgent instead.
 """
 
 from typing import Any
 
-# ─── Canonical tool specs ─────────────────────────────────────────────────────
+# Canonical tool specs
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -198,30 +198,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
 ]
 
-# Tools that only make sense in text chat (excluded from Nova Sonic voice)
-_SONIC_EXCLUDED_TOOLS = {"ask_clarification"}
-
-
-# ─── Nova Sonic format ────────────────────────────────────────────────────────
-
-def sonic_tool_configuration() -> dict[str, Any]:
-    """Format tool definitions for the Nova Sonic toolConfiguration field."""
-    return {
-        "tools": [
-            {
-                "toolSpec": {
-                    "name": t["name"],
-                    "description": t["description"],
-                    "inputSchema": {"json": t["inputSchema"]},
-                }
-            }
-            for t in TOOL_DEFINITIONS
-            if t["name"] not in _SONIC_EXCLUDED_TOOLS
-        ]
-    }
-
-
-# Claude (Anthropic SDK) format 
+# Claude (Anthropic SDK) format
 
 def claude_tool_definitions() -> list[dict[str, Any]]:
     """Format tool definitions for the Anthropic messages API."""

@@ -333,14 +333,14 @@ class _VoiceStatusBanner extends StatelessWidget {
       VoiceSessionStatus.connecting => 'Connecting live voice session…',
       VoiceSessionStatus.ready => 'Live voice session ready',
       VoiceSessionStatus.listening => 'Listening for live audio…',
-      VoiceSessionStatus.processing => 'Nova Sonic is processing…',
-      VoiceSessionStatus.speaking => 'Nova Sonic is responding…',
+      VoiceSessionStatus.processing => 'Buddy is processing…',
+      VoiceSessionStatus.speaking => 'Buddy is responding…',
       _ => 'Live voice session active',
     };
 
     final subtitle = vm.isVoiceCaptureAvailable
         ? 'Mic capture is active for this session.'
-        : 'Type into the input field to exercise the live Nova Sonic path.';
+        : 'Type into the input field to talk to your buddy';
 
     return Container(
       width: double.infinity,
@@ -397,7 +397,7 @@ class _EmptyState extends StatelessWidget {
       return 'Live session ready';
     }
     return switch (micState) {
-      MicState.idle => 'Tap to start a live Nova Sonic session',
+      MicState.idle => 'Tap to start talking to your buddy',
       MicState.listening => 'Listening…',
       MicState.processing => 'Processing…',
     };
@@ -588,7 +588,7 @@ class _MessageList extends StatelessWidget {
           );
         }
 
-        // Voice draft bubble (Nova Sonic)
+        // Voice draft bubble
         if (draftVisible && afterIndex == (isStreaming ? 1 : 0)) {
           return JunoResponseBubble(
             message: ChatMessageModel(
@@ -777,7 +777,7 @@ class _InputArea extends StatelessWidget {
     final isLoading = vm.state == ViewState.loading;
     final micDisabled = isLoading && !vm.hasActiveVoiceSession;
     final hint = vm.hasActiveVoiceSession
-        ? 'Send text into the live Nova Sonic session...'
+        ? 'Send text to your buddy...'
         : 'Ask Juno anything...';
 
     return Container(

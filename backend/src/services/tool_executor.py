@@ -13,11 +13,19 @@ from uuid import uuid4
 from google.cloud import firestore as fs
 from google.cloud.firestore_v1.base_query import FieldFilter
 
+from ..config.settings import settings
 from ..lib.logger import logger
 from .firebase import admin_firestore, admin_messaging
 from .google_calendar_connector import GoogleCalendarConnector
 
 ToolResult = dict[str, Any]
+
+TOOL_TIMEOUT_S = settings.VOICE_TOOL_TIMEOUT_S
+
+
+# runs sync functions with timeout
+async def _run(fn, *args, **kwargs):
+    return await asyncio.wait_for(asyncio.to_thread(fn, *args, **kwargs), timeout=TOOL_TIMEOUT_S)
 
 
 class ToolExecutor:
@@ -110,7 +118,7 @@ class ToolExecutor:
             "created_at": now_iso,
         }
         ref = self._reminders_ref().document(reminder_id)
-        await asyncio.to_thread(lambda: ref.set(data))
+        await _run(lambda: ref.set(data))
 
         return {
             "reminder_id": reminder_id,
@@ -129,7 +137,7 @@ class ToolExecutor:
                 q = q.where(filter=FieldFilter("status", "==", status_filter))
             return [{"reminder_id": d.id, **d.to_dict()} for d in q.stream()]
 
-        reminders = await asyncio.to_thread(_fetch)
+        reminders = await _run(_fetch)
         return {"reminders": reminders}
 
     async def _cancel_reminder(self, inp: dict[str, Any]) -> ToolResult:
@@ -139,7 +147,7 @@ class ToolExecutor:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         ref = self._reminders_ref().document(reminder_id)
-        await asyncio.to_thread(lambda: ref.update({
+        await _run(lambda: ref.update({
             "status": "dismissed",
             "dismissed_at": now_iso,
         }))
@@ -182,7 +190,7 @@ class ToolExecutor:
                 "status": event.get("status"),
             }
 
-        return await asyncio.to_thread(_create)
+        return await _run(_create)
 
     async def _get_upcoming_events(self, inp: dict[str, Any]) -> ToolResult:
         def _fetch() -> ToolResult:
@@ -195,7 +203,7 @@ class ToolExecutor:
                 hours_ahead=int(inp.get("hours_ahead", 24) or 24),
             )
 
-        return await asyncio.to_thread(_fetch)
+        return await _run(_fetch)
 
     # Memory
     async def _store_memory(self, inp: dict[str, Any]) -> ToolResult:
@@ -230,7 +238,7 @@ class ToolExecutor:
                 })
             return memory_id
 
-        memory_id = await asyncio.to_thread(_upsert)
+        memory_id = await _run(_upsert)
         return {"memory_id": memory_id, "key": key, "value": value, "category": category}
 
     async def _query_memory(self, inp: dict[str, Any]) -> ToolResult:
@@ -254,7 +262,7 @@ class ToolExecutor:
                     break
             return matches
 
-        matches = await asyncio.to_thread(_search)
+        matches = await _run(_search)
         return {"matches": matches}
 
     # Nutrition
@@ -297,7 +305,7 @@ class ToolExecutor:
             "timestamp": now_iso,
         }
         ref = self._nutrition_logs_ref().document(log_id)
-        await asyncio.to_thread(lambda: ref.set(log_data))
+        await _run(lambda: ref.set(log_data))
 
         return {
             "nutrition_log_id": log_id,
@@ -329,12 +337,12 @@ class ToolExecutor:
         context: dict[str, Any] = {"user_id": self._user_id}
 
         if include_memories:
-            context["memories"] = await asyncio.to_thread(
+            context["memories"] = await _run(
                 lambda: [{"memory_id": d.id, **d.to_dict()} for d in self._memories_ref().stream()]
             )
 
         if include_reminders:
-            context["reminders"] = await asyncio.to_thread(
+            context["reminders"] = await _run(
                 lambda: [
                     {"reminder_id": d.id, **d.to_dict()}
                     for d in self._reminders_ref().where(filter=FieldFilter("status", "==", "pending")).stream()

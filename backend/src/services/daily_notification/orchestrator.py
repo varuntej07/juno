@@ -143,19 +143,30 @@ async def _run(user_id: str) -> None:
     await _write_daily_plan(user_id, today, plan, retry_count, rejection_feedback)
 
     # Step 10: Schedule two Cloud Tasks
-    await asyncio.gather(
-        _schedule_nudge_send(user_id, today, "morning_nudge", plan.morning_nudge.send_at_utc),
-        _schedule_nudge_send(user_id, today, "evening_nudge", plan.evening_nudge.send_at_utc),
+    # Always recompute UTC from the validated local time, never trust LLM-generated UTC,
+    # which might contain timezone offset errors or past timestamps.
+    morning_utc = _local_hhmm_to_utc(plan.morning_nudge.send_at_local_time, user_timezone)
+    evening_utc = _local_hhmm_to_utc(plan.evening_nudge.send_at_local_time, user_timezone)
+    scheduled = await asyncio.gather(
+        _schedule_nudge_send(user_id, today, "morning_nudge", morning_utc),
+        _schedule_nudge_send(user_id, today, "evening_nudge", evening_utc),
     )
 
-    logger.info("daily_notification: plan scheduled", {
+    tasks_ok = all(scheduled)
+    logger.info("daily_notification: plan complete", {
         "user_id": user_id,
         "date": today,
         "plan_source": plan.plan_source,
         "morning_topic": plan.morning_nudge.topic,
         "evening_topic": plan.evening_nudge.topic,
         "retry_count": retry_count,
+        "tasks_scheduled": tasks_ok,
     })
+    if not tasks_ok:
+        logger.error("daily_notification: one or more nudge tasks failed to schedule", {
+            "user_id": user_id,
+            "date": today,
+        })
 
 
 # Safe default plan 
@@ -342,7 +353,7 @@ async def _schedule_nudge_send(
     plan_date: str,
     nudge_slot: str,
     send_at_utc: str,
-) -> None:
+) -> bool:
     """Schedule a Cloud Task to fire at send_at_utc → POST /internal/daily-notify/send."""
     from ...config.settings import settings
 
@@ -407,12 +418,14 @@ async def _schedule_nudge_send(
             "send_at_utc": send_at_utc,
             "task_name": task_name,
         })
+        return True
     except Exception as exc:
         logger.exception("daily_notification: failed to schedule nudge task", {
             "user_id": user_id,
             "nudge_slot": nudge_slot,
             "error": str(exc),
         })
+        return False
 
 
 # Context extraction helpers 

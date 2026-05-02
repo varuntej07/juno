@@ -84,7 +84,7 @@ async def handle_send_nudge(body: dict[str, Any]) -> dict[str, Any]:
 
     if not user_id or not plan_date or nudge_slot not in ("morning_nudge", "evening_nudge"):
         logger.warn("daily_notification: send_nudge received invalid payload", {"body": body})
-        return {"error": "invalid_payload"}
+        return {"error": "invalid_payload", "status_code": 400}
 
     # Load the daily plan document
     plan_doc = await _load_daily_plan(user_id, plan_date)
@@ -93,7 +93,7 @@ async def handle_send_nudge(body: dict[str, Any]) -> dict[str, Any]:
             "user_id": user_id,
             "plan_date": plan_date,
         })
-        return {"error": "plan_not_found"}
+        return {"error": "plan_not_found", "status_code": 503}
 
     nudge = plan_doc.get(nudge_slot, {})
 
@@ -115,7 +115,7 @@ async def handle_send_nudge(body: dict[str, Any]) -> dict[str, Any]:
             "user_id": user_id,
             "nudge_slot": nudge_slot,
         })
-        return {"error": "missing_content"}
+        return {"error": "missing_content", "status_code": 400}
 
     # Send via FCM
     result = await send_notification(
@@ -133,6 +133,24 @@ async def handle_send_nudge(body: dict[str, Any]) -> dict[str, Any]:
         priority="high",
         collapse_key=f"daily_nudge_{nudge_slot}",
     )
+
+    if result.tokens_targeted == 0:
+        logger.warn("daily_notification: no FCM tokens found, notification not delivered", {
+            "user_id": user_id,
+            "nudge_slot": nudge_slot,
+            "plan_date": plan_date,
+        })
+        return {"status": "no_devices", "tokens_targeted": 0, "success_count": 0}
+
+    if not result.delivered:
+        logger.error("daily_notification: FCM delivery failed, all tokens rejected", {
+            "user_id": user_id,
+            "nudge_slot": nudge_slot,
+            "plan_date": plan_date,
+            "tokens_targeted": result.tokens_targeted,
+            "failure_count": result.failure_count,
+        })
+        return {"error": "fcm_delivery_failed", "status_code": 500}
 
     sent_at = datetime.now(timezone.utc).isoformat()
 

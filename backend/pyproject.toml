@@ -16,9 +16,9 @@ dependencies = [
     "pydantic-settings>=2.7",
     "python-dotenv>=1.0",
 
-    # AWS (Nova Sonic + Bedrock) — smithy-generated async SDK for bidirectional streaming
-    "aws-sdk-bedrock-runtime",
-    "smithy-aws-core",
+    # LiveKit — voice pipeline (STT: Deepgram, LLM: Anthropic, TTS: Cartesia, VAD: Silero)
+    "livekit-agents[deepgram,anthropic,cartesia,silero]>=1.0",
+    "livekit-api>=0.7",
 
     # Anthropic Claude
     "anthropic>=0.52",
@@ -43,8 +43,6 @@ dependencies = [
     # LangSmith for LLM observability and tracing
     "langsmith>=0.2",
 
-    # Lambda adapter (for REST handlers deployed to Lambda)
-    "mangum>=0.19",
 ]
 
 [project.optional-dependencies]

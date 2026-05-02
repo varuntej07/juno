@@ -44,8 +44,8 @@ class ErrorStreamEvent extends ChatStreamEvent {
   ErrorStreamEvent(this.message);
 }
 
-/// Structured data returned by the backend when a set_reminder tool call
-/// succeeds. Used to render the inline ReminderCard in chat.
+/// Structured data returned by the backend when a set_reminder tool call succeeds.
+/// Used to render the inline ReminderCard in chat.
 class ReminderPayload {
   final String reminderId;
   final String message;
@@ -128,11 +128,11 @@ class ChatResponse {
   }
 }
 
-class LambdaApiService {
+class BackendApiService {
   final ApiClient? _apiClient;
   final bool _useStub;
 
-  LambdaApiService({ApiClient? apiClient, bool useStub = false})
+  BackendApiService({ApiClient? apiClient, bool useStub = false})
       : _apiClient = apiClient,
         _useStub = useStub;
 
@@ -147,8 +147,8 @@ class LambdaApiService {
   }) async {
     if (_useStub || _apiClient == null) {
       AppLogger.info(
-        'LambdaApiService stub: sendMessage',
-        tag: 'LambdaApiService',
+        'BackendApiService stub: sendMessage',
+        tag: 'BackendApiService',
         metadata: {
           'message': message,
           'history_len': history.length,
@@ -158,7 +158,7 @@ class LambdaApiService {
       await Future.delayed(const Duration(milliseconds: 800));
       return Result.success(
         ChatResponse.stub(
-          'Not connected — Lambda endpoint not configured yet. '
+          'Not connected — backend endpoint not configured yet. '
           'Your message: "$message"',
         ),
       );
@@ -211,11 +211,11 @@ class LambdaApiService {
           final event = _parseStreamEvent(json);
           if (event != null) yield event;
         } catch (e) {
-          AppLogger.warning('SSE parse error: $e', tag: 'LambdaApiService');
+          AppLogger.warning('SSE parse error: $e', tag: 'BackendApiService');
         }
       }
     } catch (e, st) {
-      AppLogger.error('SSE stream error', error: e, stackTrace: st, tag: 'LambdaApiService');
+      AppLogger.error('SSE stream error', error: e, stackTrace: st, tag: 'BackendApiService');
       yield ErrorStreamEvent(AppException.unexpected(e.toString()).message);
     }
   }
@@ -262,12 +262,12 @@ class LambdaApiService {
     result.when(
       success: (_) => AppLogger.info(
         'Engagement responded acknowledged',
-        tag: 'LambdaApiService',
+        tag: 'BackendApiService',
         metadata: {'engagementId': engagementId},
       ),
       failure: (e) => AppLogger.warning(
         'Failed to mark engagement responded',
-        tag: 'LambdaApiService',
+        tag: 'BackendApiService',
         metadata: {'engagementId': engagementId, 'error': e.message},
       ),
     );
@@ -278,7 +278,7 @@ class LambdaApiService {
     String userId,
   ) async {
     if (_useStub || _apiClient == null) {
-      AppLogger.info('LambdaApiService stub: analyzeNutrition', tag: 'LambdaApiService');
+      AppLogger.info('BackendApiService stub: analyzeNutrition', tag: 'BackendApiService');
       return Result.failure(
         AppException(
           code: ErrorCode.unexpected,

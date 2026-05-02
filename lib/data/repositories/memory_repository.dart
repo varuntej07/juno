@@ -55,7 +55,7 @@ class MemoryRepository {
     String userId,
     String query,
   ) async {
-    // Basic prefix search — full-text search via Lambda in a later session
+    // Basic prefix search — full-text backend search can be added later.
     return _firestoreService.getCollection(
       _userCollection(userId),
       MemoryModel.fromJson,

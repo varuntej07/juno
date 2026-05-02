@@ -1,6 +1,6 @@
 """
 ClaudeClient — multi-turn conversation with tool-use loop via Anthropic SDK.
-Used by the text /chat endpoint; Nova Sonic handles voice natively.
+Used by the text /chat endpoint. The LiveKit voice agent uses livekit-plugins-anthropic.
 """
 
 from __future__ import annotations

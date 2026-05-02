@@ -79,7 +79,7 @@ def resolve_user_id_from_event(
     *,
     body: dict | None = None,
 ) -> str | None:
-    """Extract uid from a Lambda-style event produced by main._to_lambda_event.
+    """Extract uid from the handler event produced by main._to_handler_event.
 
     firebase-admin's verify_id_token sets 'uid' at the top level of the claims
     dict AND also includes 'sub' (the JWT standard claim — same value).  We

@@ -27,7 +27,7 @@ dependencies:
   intl:
   shared_preferences:
   flutter_timezone:
-  flutter_sound:
+  livekit_client:
   image_picker:
   permission_handler:
   drift:
