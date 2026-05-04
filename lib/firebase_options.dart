@@ -64,7 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '620715294422',
     projectId: 'juno-2ea45',
     storageBucket: 'juno-2ea45.firebasestorage.app',
-    iosBundleId: 'com.juno.junoApp',
+    iosBundleId: 'com.juno.aura',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -73,7 +73,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '620715294422',
     projectId: 'juno-2ea45',
     storageBucket: 'juno-2ea45.firebasestorage.app',
-    iosBundleId: 'com.juno.junoApp',
+    iosBundleId: 'com.juno.aura',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

@@ -122,7 +122,7 @@ class _GoogleCalendarCard extends StatelessWidget {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Sync meetings into Juno for chat answers.',
+                      'Sync meetings into Aura for chat answers.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 13,

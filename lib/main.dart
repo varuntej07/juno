@@ -42,7 +42,7 @@ void main() async {
   }
 
   AppLogger.info(
-    'Juno starting',
+    'Aura starting',
     tag: 'main',
     metadata: {
       'env': Environment.current.env.name,
@@ -51,5 +51,5 @@ void main() async {
   );
 
   final prefs = await SharedPreferences.getInstance();
-  runApp(MultiProvider(providers: buildProviders(prefs), child: const JunoApp()));
+  runApp(MultiProvider(providers: buildProviders(prefs), child: const AuraApp()));
 }

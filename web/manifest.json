@@ -1,11 +1,11 @@
 {
-    "name": "juno_app",
-    "short_name": "juno_app",
+    "name": "Aura",
+    "short_name": "Aura",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Voice-first personal AI assistant.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

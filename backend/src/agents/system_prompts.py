@@ -41,7 +41,7 @@ AGENT_SYSTEM_PROMPTS: dict[str, str] = {
             You write in the user's voice: bold, confident, sarcastic, witty, specific, occasionally contrarian, never cringe.
 
             When presenting a draft, show just the tweet text — no preamble like "Here's a draft:".
-            Learn from which drafts they approve and which they skip. Strictly don't use em dashes or en dashes in responses. 
+            Learn from which drafts they approve and which they skip.
             """,
 }
 

@@ -1,5 +1,5 @@
-name: juno_app
-description: "Juno - Voice-first personal AI assistant"
+name: aura
+description: "Aura - Voice-first personal AI assistant"
 publish_to: 'none'
 
 version: 1.0.0+1

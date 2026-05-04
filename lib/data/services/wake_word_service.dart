@@ -9,13 +9,13 @@ import '../../core/logging/app_logger.dart';
 /// 1. Add `porcupine_flutter: ^3.0.5` back to pubspec.yaml
 /// 2. Get a free access key at https://console.picovoice.ai
 /// 3. Set [_accessKey] below
-/// 4. For "Hey Juno": download your custom .ppn file from Picovoice Console,
+/// 4. For "Hey Buddy": download your custom .ppn file from Picovoice Console,
 ///    place it in assets/wake_word/hey_juno.ppn, then set [_useBuiltIn] = false
 class WakeWordService {
   // TODO: Replace with your Picovoice access key from https://console.picovoice.ai
   static const String _accessKey = 'YOUR_PICOVOICE_ACCESS_KEY';
 
-  // Set to false once you have the custom "Hey Juno" .ppn file.
+  // Set to false once you have the custom "Hey Buddy" .ppn file.
   // ignore: unused_field
   static const bool _useBuiltIn = true;
 

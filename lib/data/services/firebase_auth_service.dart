@@ -112,7 +112,11 @@ class FirebaseAuthService {
         stackTrace: st,
         tag: 'FirebaseAuthService',
       );
-      if (e.code.name.toLowerCase().contains('canceled')) {
+      final isUserCancellation = e.code == GoogleSignInExceptionCode.canceled &&
+          (e.description == null ||
+              e.description!.isEmpty ||
+              e.description!.toLowerCase().contains('cancel'));
+      if (isUserCancellation) {
         return Result.failure(AppException.authCancelled());
       }
       return Result.failure(AppException.authFailed(e, st));
@@ -158,7 +162,11 @@ class FirebaseAuthService {
         stackTrace: st,
         tag: 'FirebaseAuthService',
       );
-      if (e.code.name.toLowerCase().contains('canceled')) {
+      final isUserCancellation = e.code == GoogleSignInExceptionCode.canceled &&
+          (e.description == null ||
+              e.description!.isEmpty ||
+              e.description!.toLowerCase().contains('cancel'));
+      if (isUserCancellation) {
         return Result.failure(AppException.authCancelled());
       }
       return Result.failure(AppException.authFailed(e, st));

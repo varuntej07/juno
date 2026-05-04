@@ -21,7 +21,7 @@ class LoginScreen extends StatelessWidget {
               _Logo(),
               const SizedBox(height: 16),
               const Text(
-                'Juno',
+                'Aura',
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 36,

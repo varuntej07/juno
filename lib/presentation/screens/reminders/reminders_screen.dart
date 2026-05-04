@@ -455,7 +455,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Ask Juno to remind you of something.',
+            'Ask Aura to remind you of something.',
             style: TextStyle(
               color: AppColors.textTertiary,
               fontSize: 13,

@@ -33,10 +33,10 @@ class AgentNudgeTapPayload {
 
 const _tag = 'NotificationService';
 
-/// Android notification channel used for all Juno notifications.
+/// Android notification channel used for all Aura notifications.
 /// Must match the `channel_id` sent by the backend (`juno_default`).
 const _kAndroidChannelId = 'juno_default';
-const _kAndroidChannelName = 'Juno Notifications';
+const _kAndroidChannelName = 'Aura Notifications';
 
 /// Centralized FCM notification service.
 ///

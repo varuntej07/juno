@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 enum ErrorCode {
   // Network
   networkUnavailable,
@@ -90,7 +92,9 @@ class AppException implements Exception {
   factory AppException.authFailed(Object error, [StackTrace? st]) {
     return AppException(
       code: ErrorCode.authFailed,
-      message: 'Sign-in failed. Please try again.',
+      message: kDebugMode
+          ? 'Sign-in failed: ${error.toString()}'
+          : 'Sign-in failed. Please try again.',
       originalError: error,
       stackTrace: st,
     );

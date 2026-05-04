@@ -64,7 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SectionHeader('Voice'),
               _ToggleTile(
                 title: 'Wake Word',
-                subtitle: 'Activate with "Hey Juno"',
+                subtitle: 'Activate with "Hey Buddy"',
                 value: settings?.wakeWordEnabled ?? false,
                 onChanged: (v) => settingsVm.toggleWakeWord(v),
               ),
@@ -107,7 +107,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 24),
               Center(
                 child: Text(
-                  'Juno v1.0.0',
+                  'Aura v1.0.0',
                   style: const TextStyle(
                     color: AppColors.textTertiary,
                     fontSize: 12,

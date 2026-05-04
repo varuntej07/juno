@@ -6,14 +6,14 @@ import 'core/router/router.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/viewmodels/auth_viewmodel.dart';
 
-class JunoApp extends StatefulWidget {
-  const JunoApp({super.key});
+class AuraApp extends StatefulWidget {
+  const AuraApp({super.key});
 
   @override
-  State<JunoApp> createState() => _JunoAppState();
+  State<AuraApp> createState() => _AuraAppState();
 }
 
-class _JunoAppState extends State<JunoApp> {
+class _AuraAppState extends State<AuraApp> {
   late final GoRouter _router;
 
   @override
@@ -29,7 +29,7 @@ class _JunoAppState extends State<JunoApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Juno',
+      title: 'Aura',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       routerConfig: _router,
