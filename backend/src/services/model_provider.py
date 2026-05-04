@@ -216,12 +216,12 @@ class ModelProvider:
             config = types.GenerateContentConfig(
                 system_instruction=system,
                 temperature=temperature,
-                max_output_tokens=1024,
+                max_output_tokens=2048,
             )
         else:
             config = types.GenerateContentConfig(
                 temperature=temperature,
-                max_output_tokens=1024,
+                max_output_tokens=2048,
             )
 
         contents.append(prompt)
@@ -300,7 +300,7 @@ class ModelProvider:
 
         kwargs: dict[str, Any] = {
             "model": model_id,
-            "max_tokens": 1024,
+            "max_tokens": 2048,
             "messages": messages,
             "temperature": temperature,
         }

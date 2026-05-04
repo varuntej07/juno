@@ -31,7 +31,8 @@ _RETRYABLE_ERRORS = (
     anthropic.InternalServerError,   # 500 / 529
 )
 
-_CHAT_EXCLUDED_TOOLS = {"get_user_context"}
+EXCLUDED_TOOLS_FOR_GENERAL_CHAT = {"get_user_context", "web_search"}
+EXCLUDED_TOOLS_FOR_AGENT_CHAT = {"get_user_context"}
 
 _TOOL_STATUS_MESSAGES: dict[str, str] = {
     "set_reminder": "Setting your reminder...",
@@ -44,6 +45,7 @@ _TOOL_STATUS_MESSAGES: dict[str, str] = {
     "analyze_nutrition": "Analysing nutrition...",
     "get_user_context": "Reading your profile...",
     "ask_clarification": "Formulating a question...",
+    "web_search": "Searching the web...",
 }
 
 
@@ -62,6 +64,7 @@ class ClaudeClient:
         system_prompt: str,
         user_text: str,
         history: list[dict[str, Any]] | None = None,
+        is_agent: bool = False,
     ) -> dict[str, Any]:
         """
         Run a full multi-turn Claude conversation until a text response
@@ -72,11 +75,13 @@ class ClaudeClient:
                      before the current user_text. Enables multi-turn context
                      across HTTP requests. Must alternate user/assistant roles
                      and end before the current user turn.
+            is_agent: When True, includes agent-only tools (e.g. web_search).
 
         Returns:
             {"text": str, "tool_names": list[str]}
         """
-        tools = [t for t in claude_tool_definitions() if t["name"] not in _CHAT_EXCLUDED_TOOLS]
+        excluded = EXCLUDED_TOOLS_FOR_AGENT_CHAT if is_agent else EXCLUDED_TOOLS_FOR_GENERAL_CHAT
+        tools = [t for t in claude_tool_definitions() if t["name"] not in excluded]
 
         # Build message list: prior history + current user turn
         prior: list[dict[str, Any]] = history or []
@@ -232,6 +237,7 @@ class ClaudeClient:
         system_prompt: str,
         user_text: str,
         history: list[dict[str, Any]] | None = None,
+        is_agent: bool = False,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Streaming version of send_text_turn. Yields SSE-compatible event dicts:
@@ -242,7 +248,8 @@ class ClaudeClient:
           {"type": "done",            "metadata": {...}}
           {"type": "error",           "message": str}
         """
-        tools = [t for t in claude_tool_definitions() if t["name"] not in _CHAT_EXCLUDED_TOOLS]
+        excluded = EXCLUDED_TOOLS_FOR_AGENT_CHAT if is_agent else EXCLUDED_TOOLS_FOR_GENERAL_CHAT
+        tools = [t for t in claude_tool_definitions() if t["name"] not in excluded]
         prior: list[dict[str, Any]] = history or []
         messages: list[dict[str, Any]] = [*prior, {"role": "user", "content": user_text}]
         tool_names_used: list[str] = []

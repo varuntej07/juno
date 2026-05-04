@@ -47,6 +47,7 @@ from .handlers.engagement import (
     handle_engagement_orchestrate,
     handle_engagement_responded,
 )
+from .handlers.scheduled_agents import handle_agents_tick, handle_agent_run
 from .handlers.notification_reply import handle_notification_reply_request
 from .handlers.nutrition import handle_nutrition_analyze_request, handle_nutrition_scan_request
 from .handlers.scheduler import handle_scheduler_tick
@@ -219,13 +220,24 @@ def _verify_scheduler_token(request: Request) -> None:
     """Allow only Cloud Scheduler calls signed by the juno-scheduler service account."""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        logger.warn("scheduler_auth: missing bearer token", {"path": request.url.path})
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = auth_header.removeprefix("Bearer ")
     try:
         claims = verify_oauth2_token(token, _google_auth_transport, audience=_CLOUD_RUN_AUDIENCE)
-    except Exception:
+    except Exception as exc:
+        logger.warn("scheduler_auth: invalid OIDC token", {
+            "path": request.url.path,
+            "error": str(exc),
+        })
         raise HTTPException(status_code=401, detail="Invalid OIDC token")
-    if claims.get("email") != settings.SCHEDULER_SA_EMAIL:
+    caller_email = claims.get("email", "")
+    if caller_email != settings.SCHEDULER_SA_EMAIL:
+        logger.warn("scheduler_auth: forbidden service account", {
+            "path": request.url.path,
+            "caller_email": caller_email,
+            "expected_email": settings.SCHEDULER_SA_EMAIL,
+        })
         raise HTTPException(status_code=403, detail="Forbidden service account")
 
 
@@ -285,6 +297,26 @@ async def daily_notify_send_endpoint(
     result = await handle_send_nudge(body)
     status_code = result.pop("status_code", 200)
     return JSONResponse(content=result, status_code=status_code)
+
+
+@app.post("/internal/agents/tick")
+async def agents_tick_endpoint(
+    request: Request,
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
+    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    result = await handle_agents_tick(body)
+    return JSONResponse(content=result)
+
+
+@app.post("/internal/agents/{agent_id}/run/{user_id}")
+async def agent_run_endpoint(
+    agent_id: str,
+    user_id: str,
+    _: None = Depends(_verify_scheduler_token),
+) -> JSONResponse:
+    result = await handle_agent_run(agent_id, user_id)
+    return JSONResponse(content=result)
 
 
 @app.post("/internal/engage/responded")

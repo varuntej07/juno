@@ -23,7 +23,33 @@ class ChatRepository {
   })  : _db = db,
         _chatBackupService = chatBackupService;
 
-  Future<String> createSession() async {
+  /// Returns recent sessions that belong to main Buddy chat (no agent).
+  Future<Result<List<ChatSession>>> loadMainSessions({int limit = 25}) async {
+    try {
+      final rows = await (_db.select(_db.chatSessions)
+            ..where((t) => t.agentId.isNull())
+            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
+            ..limit(limit))
+          .get();
+      return Result.success(rows);
+    } catch (e, st) {
+      return Result.failure(
+        AppException.unexpected('Failed to load sessions', error: e, stackTrace: st),
+      );
+    }
+  }
+
+  /// Returns the single persistent session for an agent, creating it if absent.
+  Future<String> getOrCreateAgentSession(String agentId) async {
+    final existing = await (_db.select(_db.chatSessions)
+          ..where((t) => t.agentId.equals(agentId))
+          ..limit(1))
+        .getSingleOrNull();
+    if (existing != null) return existing.id;
+    return createSession(agentId: agentId);
+  }
+
+  Future<String> createSession({String? agentId}) async {
     final id = _uuid.v4();
     final now = DateTime.now();
     await _db.into(_db.chatSessions).insert(
@@ -31,6 +57,7 @@ class ChatRepository {
             id: id,
             startedAt: now,
             updatedAt: Value(now),
+            agentId: Value(agentId),
           ),
         );
     return id;

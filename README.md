@@ -1,16 +1,22 @@
-# juno_app
+# Aura
 
-A new Flutter project.
+Aura is my personal Flutter and FastAPI assistant app for chat, voice, reminders, nutrition, notifications, and calendar tools.
 
-## Getting Started
+It is useful as a personal project, but reliability still depends on external services and clean local configuration. Keep Firebase, Anthropic, Gemini, LiveKit, Deepgram, Cartesia, Google Calendar, Cloud Scheduler, Cloud Tasks, and FCM failures visible instead of hiding them.
 
-This project is a starting point for a Flutter application.
+Keep changes small. Prefer boring fixes, clear configuration, and one working path over broad rewrites.
 
-A few resources to get you started if this is your first Flutter project:
+## Run
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Backend:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```powershell
+cd backend
+uvicorn src.main:app --reload --port 8000
+```
+
+App:
+
+```powershell
+flutter run
+```

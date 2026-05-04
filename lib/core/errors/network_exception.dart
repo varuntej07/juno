@@ -30,6 +30,18 @@ class NetworkException extends AppException {
         message: 'Not found (404)',
         statusCode: statusCode,
       );
+    } else if (statusCode == 408) {
+      return NetworkException(
+        code: ErrorCode.requestTimeout,
+        message: 'Request timeout (408)',
+        statusCode: statusCode,
+      );
+    } else if (statusCode == 429) {
+      return NetworkException(
+        code: ErrorCode.serverError,
+        message: 'Too many requests (429)',
+        statusCode: statusCode,
+      );
     } else if (statusCode >= 500) {
       return NetworkException(
         code: ErrorCode.serverError,
@@ -44,8 +56,12 @@ class NetworkException extends AppException {
     );
   }
 
-  bool get isRetryable =>
-      statusCode != null && statusCode! >= 500 ||
-      code == ErrorCode.networkUnavailable ||
-      code == ErrorCode.requestTimeout;
+  bool get isRetryable {
+    final status = statusCode;
+    return status == 408 ||
+        status == 429 ||
+        (status != null && status >= 500) ||
+        code == ErrorCode.networkUnavailable ||
+        code == ErrorCode.requestTimeout;
+  }
 }

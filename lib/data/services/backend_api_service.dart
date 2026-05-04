@@ -186,6 +186,7 @@ class BackendApiService {
     List<Map<String, String>> history = const [],
     String? sessionId,
     String? clientMessageId,
+    String? agentId,
   }) async* {
     if (_useStub || _apiClient == null) {
       await Future.delayed(const Duration(milliseconds: 600));
@@ -205,6 +206,7 @@ class BackendApiService {
         if (sessionId != null) 'session_id': sessionId,
         if (history.isNotEmpty) 'history': history,
         if (clientMessageId != null) 'client_message_id': clientMessageId,
+        if (agentId != null) 'agent_id': agentId,
       })) {
         try {
           final json = jsonDecode(line) as Map<String, dynamic>;
@@ -215,9 +217,19 @@ class BackendApiService {
         }
       }
     } catch (e, st) {
-      AppLogger.error('SSE stream error', error: e, stackTrace: st, tag: 'BackendApiService');
-      yield ErrorStreamEvent(AppException.unexpected(e.toString()).message);
+      AppLogger.error(
+        'SSE stream error',
+        error: e,
+        stackTrace: st,
+        tag: 'BackendApiService',
+      );
+      yield ErrorStreamEvent(_streamErrorMessage(e));
     }
+  }
+
+  static String _streamErrorMessage(Object error) {
+    if (error is AppException) return error.message;
+    return AppException.unexpected(error.toString()).message;
   }
 
   static ChatStreamEvent? _parseStreamEvent(Map<String, dynamic> json) {

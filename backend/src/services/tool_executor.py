@@ -59,6 +59,9 @@ class ToolExecutor:
             "analyze_nutrition": self._analyze_nutrition,
             "get_user_context": self._get_user_context,
             "ask_clarification": self._ask_clarification,
+            "configure_agent": self._configure_agent,
+            "get_agent_config": self._get_agent_config,
+            "web_search": self._web_search,
         }
         handler = dispatch.get(tool_name)
         if handler is None:
@@ -318,6 +321,15 @@ class ToolExecutor:
             "recommendation": recommendation,
         }
 
+    # Web search (agent-only)
+    async def _web_search(self, inp: dict[str, Any]) -> ToolResult:
+        from ..agents.data_fetchers.web_search import web_search
+        query = str(inp.get("query", "")).strip()
+        if not query:
+            raise ValueError("query is required")
+        result = await web_search(query, self._user_id)
+        return {"result": result}
+
     # Clarification (chat-only — returns sentinel dict, not a Firestore call)
     async def _ask_clarification(self, inp: dict[str, Any]) -> ToolResult:
         return {
@@ -354,6 +366,25 @@ class ToolExecutor:
             context["upcoming_events"] = result.get("events", [])
 
         return context
+
+    # Agent configuration — lets users configure agents through chat
+    async def _configure_agent(self, inp: dict[str, Any]) -> ToolResult:
+        agent_id = str(inp.get("agent_id", "")).strip()
+        setting = str(inp.get("setting", "")).strip()
+        value = inp.get("value")
+        if not agent_id or not setting:
+            return {"error": "agent_id and setting are required"}
+        ref = self._user_ref().collection("agent_config").document(agent_id)
+        await _run(lambda: ref.set({setting: value, "updated_at": datetime.now(timezone.utc).isoformat()}, merge=True))
+        return {"status": "updated", "agent_id": agent_id, "setting": setting, "value": value}
+
+    async def _get_agent_config(self, inp: dict[str, Any]) -> ToolResult:
+        agent_id = str(inp.get("agent_id", "")).strip()
+        if not agent_id:
+            return {"error": "agent_id is required"}
+        ref = self._user_ref().collection("agent_config").document(agent_id)
+        snap = await _run(lambda: ref.get())
+        return snap.to_dict() if snap.exists else {"agent_id": agent_id, "config": {}}
 
 
 # Standalone Firestore helpers (used by scheduler)

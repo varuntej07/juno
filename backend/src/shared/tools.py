@@ -170,6 +170,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "web_search",
+        "description": (
+            "Search the web for current information, news, facts, or anything not in your training data. "
+            "Use when the user asks about recent events, live data, or topics that benefit from up-to-date sources."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The search query to send to the web."},
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "ask_clarification",
         "description": (
             "Ask the user a clarifying question with 2–5 selectable options instead of free text. "

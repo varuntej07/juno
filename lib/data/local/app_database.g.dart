@@ -85,6 +85,17 @@ class $ChatSessionsTable extends ChatSessions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _agentIdMeta = const VerificationMeta(
+    'agentId',
+  );
+  @override
+  late final GeneratedColumn<String> agentId = GeneratedColumn<String>(
+    'agent_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -94,6 +105,7 @@ class $ChatSessionsTable extends ChatSessions
     lastMessageAt,
     lastMessagePreview,
     messageCount,
+    agentId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -159,6 +171,12 @@ class $ChatSessionsTable extends ChatSessions
         ),
       );
     }
+    if (data.containsKey('agent_id')) {
+      context.handle(
+        _agentIdMeta,
+        agentId.isAcceptableOrUnknown(data['agent_id']!, _agentIdMeta),
+      );
+    }
     return context;
   }
 
@@ -196,6 +214,10 @@ class $ChatSessionsTable extends ChatSessions
         DriftSqlType.int,
         data['${effectivePrefix}message_count'],
       )!,
+      agentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}agent_id'],
+      ),
     );
   }
 
@@ -213,6 +235,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
   final DateTime? lastMessageAt;
   final String? lastMessagePreview;
   final int messageCount;
+  final String? agentId;
   const ChatSession({
     required this.id,
     required this.startedAt,
@@ -221,6 +244,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
     this.lastMessageAt,
     this.lastMessagePreview,
     required this.messageCount,
+    this.agentId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -238,6 +262,9 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
       map['last_message_preview'] = Variable<String>(lastMessagePreview);
     }
     map['message_count'] = Variable<int>(messageCount);
+    if (!nullToAbsent || agentId != null) {
+      map['agent_id'] = Variable<String>(agentId);
+    }
     return map;
   }
 
@@ -256,6 +283,9 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
           ? const Value.absent()
           : Value(lastMessagePreview),
       messageCount: Value(messageCount),
+      agentId: agentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(agentId),
     );
   }
 
@@ -274,6 +304,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
         json['lastMessagePreview'],
       ),
       messageCount: serializer.fromJson<int>(json['messageCount']),
+      agentId: serializer.fromJson<String?>(json['agentId']),
     );
   }
   @override
@@ -287,6 +318,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
       'lastMessageAt': serializer.toJson<DateTime?>(lastMessageAt),
       'lastMessagePreview': serializer.toJson<String?>(lastMessagePreview),
       'messageCount': serializer.toJson<int>(messageCount),
+      'agentId': serializer.toJson<String?>(agentId),
     };
   }
 
@@ -298,6 +330,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
     Value<DateTime?> lastMessageAt = const Value.absent(),
     Value<String?> lastMessagePreview = const Value.absent(),
     int? messageCount,
+    Value<String?> agentId = const Value.absent(),
   }) => ChatSession(
     id: id ?? this.id,
     startedAt: startedAt ?? this.startedAt,
@@ -310,6 +343,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
         ? lastMessagePreview.value
         : this.lastMessagePreview,
     messageCount: messageCount ?? this.messageCount,
+    agentId: agentId.present ? agentId.value : this.agentId,
   );
   ChatSession copyWithCompanion(ChatSessionsCompanion data) {
     return ChatSession(
@@ -326,6 +360,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
       messageCount: data.messageCount.present
           ? data.messageCount.value
           : this.messageCount,
+      agentId: data.agentId.present ? data.agentId.value : this.agentId,
     );
   }
 
@@ -338,7 +373,8 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
           ..write('title: $title, ')
           ..write('lastMessageAt: $lastMessageAt, ')
           ..write('lastMessagePreview: $lastMessagePreview, ')
-          ..write('messageCount: $messageCount')
+          ..write('messageCount: $messageCount, ')
+          ..write('agentId: $agentId')
           ..write(')'))
         .toString();
   }
@@ -352,6 +388,7 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
     lastMessageAt,
     lastMessagePreview,
     messageCount,
+    agentId,
   );
   @override
   bool operator ==(Object other) =>
@@ -363,7 +400,8 @@ class ChatSession extends DataClass implements Insertable<ChatSession> {
           other.title == this.title &&
           other.lastMessageAt == this.lastMessageAt &&
           other.lastMessagePreview == this.lastMessagePreview &&
-          other.messageCount == this.messageCount);
+          other.messageCount == this.messageCount &&
+          other.agentId == this.agentId);
 }
 
 class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
@@ -374,6 +412,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
   final Value<DateTime?> lastMessageAt;
   final Value<String?> lastMessagePreview;
   final Value<int> messageCount;
+  final Value<String?> agentId;
   final Value<int> rowid;
   const ChatSessionsCompanion({
     this.id = const Value.absent(),
@@ -383,6 +422,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
     this.lastMessageAt = const Value.absent(),
     this.lastMessagePreview = const Value.absent(),
     this.messageCount = const Value.absent(),
+    this.agentId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ChatSessionsCompanion.insert({
@@ -393,6 +433,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
     this.lastMessageAt = const Value.absent(),
     this.lastMessagePreview = const Value.absent(),
     this.messageCount = const Value.absent(),
+    this.agentId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        startedAt = Value(startedAt);
@@ -404,6 +445,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
     Expression<DateTime>? lastMessageAt,
     Expression<String>? lastMessagePreview,
     Expression<int>? messageCount,
+    Expression<String>? agentId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -415,6 +457,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
       if (lastMessagePreview != null)
         'last_message_preview': lastMessagePreview,
       if (messageCount != null) 'message_count': messageCount,
+      if (agentId != null) 'agent_id': agentId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -427,6 +470,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
     Value<DateTime?>? lastMessageAt,
     Value<String?>? lastMessagePreview,
     Value<int>? messageCount,
+    Value<String?>? agentId,
     Value<int>? rowid,
   }) {
     return ChatSessionsCompanion(
@@ -437,6 +481,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
       lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
       messageCount: messageCount ?? this.messageCount,
+      agentId: agentId ?? this.agentId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -465,6 +510,9 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
     if (messageCount.present) {
       map['message_count'] = Variable<int>(messageCount.value);
     }
+    if (agentId.present) {
+      map['agent_id'] = Variable<String>(agentId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -481,6 +529,7 @@ class ChatSessionsCompanion extends UpdateCompanion<ChatSession> {
           ..write('lastMessageAt: $lastMessageAt, ')
           ..write('lastMessagePreview: $lastMessagePreview, ')
           ..write('messageCount: $messageCount, ')
+          ..write('agentId: $agentId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1917,6 +1966,7 @@ typedef $$ChatSessionsTableCreateCompanionBuilder =
       Value<DateTime?> lastMessageAt,
       Value<String?> lastMessagePreview,
       Value<int> messageCount,
+      Value<String?> agentId,
       Value<int> rowid,
     });
 typedef $$ChatSessionsTableUpdateCompanionBuilder =
@@ -1928,6 +1978,7 @@ typedef $$ChatSessionsTableUpdateCompanionBuilder =
       Value<DateTime?> lastMessageAt,
       Value<String?> lastMessagePreview,
       Value<int> messageCount,
+      Value<String?> agentId,
       Value<int> rowid,
     });
 
@@ -2001,6 +2052,11 @@ class $$ChatSessionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get agentId => $composableBuilder(
+    column: $table.agentId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> chatMessagesRefs(
     Expression<bool> Function($$ChatMessagesTableFilterComposer f) f,
   ) {
@@ -2070,6 +2126,11 @@ class $$ChatSessionsTableOrderingComposer
     column: $table.messageCount,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get agentId => $composableBuilder(
+    column: $table.agentId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ChatSessionsTableAnnotationComposer
@@ -2107,6 +2168,9 @@ class $$ChatSessionsTableAnnotationComposer
     column: $table.messageCount,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get agentId =>
+      $composableBuilder(column: $table.agentId, builder: (column) => column);
 
   Expression<T> chatMessagesRefs<T extends Object>(
     Expression<T> Function($$ChatMessagesTableAnnotationComposer a) f,
@@ -2169,6 +2233,7 @@ class $$ChatSessionsTableTableManager
                 Value<DateTime?> lastMessageAt = const Value.absent(),
                 Value<String?> lastMessagePreview = const Value.absent(),
                 Value<int> messageCount = const Value.absent(),
+                Value<String?> agentId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatSessionsCompanion(
                 id: id,
@@ -2178,6 +2243,7 @@ class $$ChatSessionsTableTableManager
                 lastMessageAt: lastMessageAt,
                 lastMessagePreview: lastMessagePreview,
                 messageCount: messageCount,
+                agentId: agentId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2189,6 +2255,7 @@ class $$ChatSessionsTableTableManager
                 Value<DateTime?> lastMessageAt = const Value.absent(),
                 Value<String?> lastMessagePreview = const Value.absent(),
                 Value<int> messageCount = const Value.absent(),
+                Value<String?> agentId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatSessionsCompanion.insert(
                 id: id,
@@ -2198,6 +2265,7 @@ class $$ChatSessionsTableTableManager
                 lastMessageAt: lastMessageAt,
                 lastMessagePreview: lastMessagePreview,
                 messageCount: messageCount,
+                agentId: agentId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -470,15 +470,17 @@ def _local_now_iso(user_timezone: str) -> str:
 
 
 def _local_hhmm_to_utc(hhmm: str, user_timezone: str) -> str:
-    """Convert today's "HH:MM" in user_timezone to a UTC ISO datetime string."""
+    """Convert today's "HH:MM" in user_timezone to a UTC ISO datetime string.
+
+    Never rolls to tomorrow: Cloud Tasks fires past-scheduled tasks immediately,
+    which is the correct behaviour for late-running notifications. Rolling to
+    tomorrow would silently skip an entire day of nudges.
+    """
     try:
         tz = ZoneInfo(user_timezone)
         h, m = int(hhmm.split(":")[0]), int(hhmm.split(":")[1])
         local_now = datetime.now(tz)
         local_target = local_now.replace(hour=h, minute=m, second=0, microsecond=0)
-        # If the target time has already passed today, schedule for tomorrow
-        if local_target <= local_now:
-            local_target += timedelta(days=1)
         return local_target.astimezone(timezone.utc).isoformat()
     except Exception:
         # Fallback: UTC now + 1 hour

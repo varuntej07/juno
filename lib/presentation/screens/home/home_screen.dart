@@ -1,20 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/constants/app_constants.dart';
-import '../../../core/errors/error_handler.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/local/app_database.dart';
-import '../../../data/models/chat_message_model.dart';
 import '../../../data/models/voice_models.dart';
+import '../../../data/repositories/chat_repository.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/home_viewmodel.dart';
-import '../../widgets/clarification_card.dart';
-import '../../widgets/error_display.dart';
-import '../../widgets/juno_response_bubble.dart';
-import '../../widgets/juno_text_field.dart';
-import '../../widgets/streaming_message_bubble.dart';
-import '../reminders/reminders_screen.dart';
 import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -26,216 +19,140 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  final _textController = TextEditingController();
-  final _scrollController = ScrollController();
-  late final AnimationController _pulseController;
-  late final Animation<double> _pulseAnimation;
+  late final AnimationController _breathController;
+  late final Animation<double> _breathAnimation;
+  late final AnimationController _rippleController;
+  late final Animation<double> _rippleAnimation;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
 
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    _breathController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+    _breathAnimation = Tween<double>(begin: 1.0, end: 1.06).animate(
+      CurvedAnimation(parent: _breathController, curve: Curves.easeInOut),
     );
 
-    // Restore chat history and start wake word after the first frame.
+    _rippleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+    _rippleAnimation = Tween<double>(begin: 1.0, end: 1.5).animate(
+      CurvedAnimation(parent: _rippleController, curve: Curves.easeOut),
+    );
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        final homeVm = context.read<HomeViewModel>();
-        final uid = context.read<AuthViewModel>().user?.uid;
-        // Load last session's messages before any network calls.
-        await homeVm.initSession(uid);
-        if (uid != null && uid.isNotEmpty) {
-          await homeVm.initWakeWord(uid);
-        }
-      } catch (e, st) {
-        // Exceptions in postFrameCallback are otherwise silently swallowed.
-        ErrorHandler.handle(e, st);
+      final uid = context.read<AuthViewModel>().user?.uid;
+      final vm = context.read<HomeViewModel>();
+
+      // Engagement taps → fresh Buddy chat with pre-loaded context
+      vm.onEngagementTap = (payload) {
+        context.push(
+          '/chat/new',
+          extra: {
+            'engagementId': payload.engagementId,
+            'agentContext': payload.agentContext,
+            'initialMessage': payload.initialMessage,
+          },
+        );
+      };
+
+      // Agent nudge taps -> the specific agent's chat thread
+      vm.onAgentNudgeTap = (payload) {
+        context.push(
+          '/agents/${payload.agentId}',
+          extra: payload.chatOpener.isNotEmpty ? payload.chatOpener : null,
+        );
+      };
+
+      if (uid != null && uid.isNotEmpty) {
+        await vm.initWakeWord(uid);
       }
     });
   }
 
   @override
   void dispose() {
-    _textController.dispose();
-    _scrollController.dispose();
-    _pulseController.dispose();
+    _breathController.dispose();
+    _rippleController.dispose();
     super.dispose();
   }
 
-  String get _userId => context.read<AuthViewModel>().user?.uid ?? 'anonymous';
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: AppConstants.animationDuration,
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _handleSend() async {
-    final text = _textController.text.trim();
-    if (text.isEmpty) return;
-
-    _textController.clear();
-    await context.read<HomeViewModel>().sendMessage(text, _userId);
-    _scrollToBottom();
-  }
+  String get _uid => context.read<AuthViewModel>().user?.uid ?? 'anonymous';
 
   Future<void> _handleMicTap() async {
-    final homeVm = context.read<HomeViewModel>();
-    if (!homeVm.hasActiveVoiceSession) {
-      await homeVm.startVoiceSession(_userId);
-      return;
+    final vm = context.read<HomeViewModel>();
+    if (vm.hasActiveSession) {
+      await vm.endSession();
+    } else {
+      await vm.startSession(_uid);
     }
-
-    if (homeVm.isVoiceCaptureAvailable && homeVm.micState == MicState.listening) {
-      await homeVm.stopVoiceSession();
-      return;
-    }
-
-    await homeVm.cancelVoiceSession();
-  }
-
-  Future<void> _openSettings() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const SettingsScreen()),
-    );
-  }
-
-  Future<void> _handleNewChat() async {
-    Navigator.of(context).pop();
-    await context.read<HomeViewModel>().createNewChat();
-  }
-
-  Future<void> _handleSelectSession(String sessionId) async {
-    Navigator.of(context).pop();
-    await context.read<HomeViewModel>().switchSession(sessionId);
-    _scrollToBottom();
-  }
-
-  void _handleRetry(String messageId) {
-    final homeVm = context.read<HomeViewModel>();
-    homeVm.retryLastResponse(messageId);
-    _scrollToBottom();
-  }
-
-  void _handleEdit(String messageId, String newText) {
-    final homeVm = context.read<HomeViewModel>();
-    homeVm.editAndResend(messageId, newText);
-    _scrollToBottom();
-  }
-
-  void _handleFeedback(String messageId, MessageFeedback? feedback) {
-    context.read<HomeViewModel>().setFeedback(messageId, feedback);
-  }
-
-  void _handleViewReminders() {
-    Navigator.push(context, RemindersScreen.route(context));
-  }
-
-  void _handleClarificationSubmit(String clarificationId, List<String> options) {
-    final homeVm = context.read<HomeViewModel>();
-    homeVm.submitClarification(clarificationId, options);
-    _scrollToBottom();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
-      drawer: Consumer2<HomeViewModel, AuthViewModel>(
-        builder: (context, homeVm, authVm, _) {
-          return _HomeDrawer(
-            userName: authVm.user?.displayName ?? 'User',
-            userEmail: authVm.user?.email ?? '',
-            sessions: homeVm.sessions,
-            currentSessionId: homeVm.currentSessionId,
-            onNewChat: _handleNewChat,
-            onSelectSession: _handleSelectSession,
-          );
+      backgroundColor: AppColors.background,
+      drawer: _ChatDrawer(
+        onNewChat: () {
+          Navigator.of(context).pop();
+          context.push('/chat/new');
+        },
+        onSelectSession: (sessionId) {
+          Navigator.of(context).pop();
+          context.push('/chat/$sessionId');
         },
       ),
-      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            _AppBar(
-              onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
-              onSettingsTap: _openSettings,
-            ),
-            _OfflineBanner(),
-            const _VoiceStatusBanner(),
-            Expanded(
-              child: Consumer<HomeViewModel>(
-                builder: (context, vm, _) {
-                  // Auto-scroll while streaming text arrives
-                  if (vm.isStreaming) {
-                    WidgetsBinding.instance
-                        .addPostFrameCallback((_) => _scrollToBottom());
-                  }
-
-                  if (vm.messages.isEmpty &&
-                      vm.streamingAssistantText.isEmpty &&
-                      !vm.isStreaming) {
-                    return _EmptyState(
-                      pulseAnimation: _pulseAnimation,
-                      micState: vm.micState,
-                      voiceStatus: vm.voiceStatus,
-                      onMicTap: () {
-                        _handleMicTap();
-                      },
-                    );
-                  }
-                  return _MessageList(
-                    messages: vm.messages,
-                    streamingAssistantText: vm.streamingAssistantText,
-                    scrollController: _scrollController,
-                    isStreaming: vm.isStreaming,
-                    streamingText: vm.streamingText,
-                    thinkingMessage: vm.thinkingMessage,
-                    onRetry: _handleRetry,
-                    onEdit: _handleEdit,
-                    onFeedback: _handleFeedback,
-                    onViewReminders: _handleViewReminders,
-                    onClarificationSubmit: _handleClarificationSubmit,
-                  );
-                },
+            // Top bar — hamburger only
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                children: [
+                  _IconButton(
+                    icon: Icons.menu_rounded,
+                    onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                  ),
+                  const Spacer(),
+                  _IconButton(
+                    icon: Icons.settings_outlined,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    ),
+                  ),
+                ],
               ),
             ),
+
+            // Transcript overlay — only visible during an active voice session
             Consumer<HomeViewModel>(
-              builder: (context, vm, _) {
-                if (vm.error != null) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: ErrorDisplay(
-                      error: vm.error!,
-                      onDismiss: vm.clearError,
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
+              builder: (_, vm, __) {
+                if (!vm.hasActiveSession) return const SizedBox.shrink();
+                return _VoiceStatusCard(vm: vm);
               },
             ),
-            _InputArea(
-              controller: _textController,
-              onSend: () {
-                _handleSend();
-              },
-              onMicTap: () {
-                _handleMicTap();
-              },
+
+            const Spacer(),
+
+            // Centered mic button
+            Consumer<HomeViewModel>(
+              builder: (_, vm, __) => _VoiceButton(
+                micState: vm.micState,
+                voiceStatus: vm.voiceStatus,
+                breathAnimation: _breathAnimation,
+                rippleAnimation: _rippleAnimation,
+                onTap: _handleMicTap,
+              ),
             ),
+
+            const SizedBox(height: 64),
           ],
         ),
       ),
@@ -243,386 +160,161 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
-class _AppBar extends StatelessWidget {
-  final VoidCallback onMenuTap;
-  final VoidCallback onSettingsTap;
+// ── Voice button ─────────────────────────────────────────────────────────────
 
-  const _AppBar({
-    required this.onMenuTap,
-    required this.onSettingsTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
-        children: [
-          InkWell(
-            onTap: onMenuTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Icon(
-                Icons.menu_rounded,
-                color: AppColors.textPrimary,
-                size: 22,
-              ),
-            ),
-          ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                'Juno',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-          InkWell(
-            onTap: onSettingsTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Icon(
-                Icons.settings_outlined,
-                color: AppColors.textSecondary,
-                size: 20,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OfflineBanner extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final isOffline = context.watch<HomeViewModel>().isOffline;
-    if (!isOffline) return const SizedBox.shrink();
-    return InlineErrorBanner(message: 'No internet connection');
-  }
-}
-
-class _VoiceStatusBanner extends StatelessWidget {
-  const _VoiceStatusBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final vm = context.watch<HomeViewModel>();
-    if (!vm.hasActiveVoiceSession) return const SizedBox.shrink();
-
-    final title = switch (vm.voiceStatus) {
-      VoiceSessionStatus.connecting => 'Connecting live voice session…',
-      VoiceSessionStatus.ready => 'Live voice session ready',
-      VoiceSessionStatus.listening => 'Listening for live audio…',
-      VoiceSessionStatus.processing => 'Buddy is processing…',
-      VoiceSessionStatus.speaking => 'Buddy is responding…',
-      _ => 'Live voice session active',
-    };
-
-    final subtitle = vm.isVoiceCaptureAvailable
-        ? 'Mic capture is active for this session.'
-        : 'Type into the input field to talk to your buddy';
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              color: AppColors.textTertiary,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  final Animation<double> pulseAnimation;
+class _VoiceButton extends StatelessWidget {
   final MicState micState;
   final VoiceSessionStatus voiceStatus;
-  final VoidCallback onMicTap;
-
-  const _EmptyState({
-    required this.pulseAnimation,
-    required this.micState,
-    required this.voiceStatus,
-    required this.onMicTap,
-  });
-
-  String get _label {
-    if (voiceStatus == VoiceSessionStatus.connecting) {
-      return 'Connecting…';
-    }
-    if (voiceStatus == VoiceSessionStatus.ready) {
-      return 'Live session ready';
-    }
-    return switch (micState) {
-      MicState.idle => 'Tap to start talking to your buddy',
-      MicState.listening => 'Listening…',
-      MicState.processing => 'Processing…',
-    };
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _MicButton(
-            animation: pulseAnimation,
-            micState: micState,
-            onTap: onMicTap,
-          ),
-          const SizedBox(height: 20),
-          Text(
-            _label,
-            style: const TextStyle(
-              color: AppColors.textTertiary,
-              fontSize: 14,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MicButton extends StatelessWidget {
-  final Animation<double> animation;
-  final MicState micState;
+  final Animation<double> breathAnimation;
+  final Animation<double> rippleAnimation;
   final VoidCallback onTap;
 
-  const _MicButton({
-    required this.animation,
+  const _VoiceButton({
     required this.micState,
+    required this.voiceStatus,
+    required this.breathAnimation,
+    required this.rippleAnimation,
     required this.onTap,
   });
 
-  Color get _buttonColor {
-    switch (micState) {
-      case MicState.idle:
-        return AppColors.micIdle;
-      case MicState.listening:
-        return AppColors.micListening;
-      case MicState.processing:
-        return AppColors.micProcessing;
-    }
+  Color get _color {
+    return switch (micState) {
+      MicState.idle => AppColors.micIdle,
+      MicState.listening => AppColors.micListening,
+      MicState.processing => AppColors.micProcessing,
+    };
+  }
+
+  String get _label {
+    return switch (voiceStatus) {
+      VoiceSessionStatus.connecting => 'Connecting…',
+      VoiceSessionStatus.ready => 'Tap to speak',
+      VoiceSessionStatus.listening => 'Listening…',
+      VoiceSessionStatus.processing => 'Processing…',
+      VoiceSessionStatus.speaking => 'Speaking…',
+      _ => 'Tap to talk',
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, child) {
-          final scale = micState == MicState.listening ? animation.value : 1.0;
-          return Transform.scale(
-            scale: scale,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                if (micState != MicState.idle)
-                  Container(
-                    width: AppConstants.micButtonSize + 24,
-                    height: AppConstants.micButtonSize + 24,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _buttonColor.withValues(
-                        alpha: micState == MicState.listening
-                            ? 0.15 * animation.value
-                            : 0.1,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedBuilder(
+            animation: Listenable.merge([breathAnimation, rippleAnimation]),
+            builder: (_, __) {
+              final isActive = micState != MicState.idle;
+              final scale = isActive ? 1.0 : breathAnimation.value;
+              return Transform.scale(
+                scale: scale,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Ripple ring — visible while listening
+                    if (micState == MicState.listening)
+                      Transform.scale(
+                        scale: rippleAnimation.value,
+                        child: Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _color.withValues(
+                              alpha: (1 - rippleAnimation.value + 1).clamp(0, 0.25),
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Main button
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _color,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _color.withValues(alpha: 0.45),
+                            blurRadius: 24,
+                            spreadRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.mic_rounded,
+                        color: Colors.white,
+                        size: 36,
                       ),
                     ),
-                  ),
-                Container(
-                  width: AppConstants.micButtonSize,
-                  height: AppConstants.micButtonSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _buttonColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: _buttonColor.withValues(alpha: 0.4),
-                        blurRadius: 20,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.mic_rounded,
-                    color: Colors.white,
-                    size: 32,
-                  ),
+                  ],
                 ),
-              ],
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: Text(
+              _label,
+              key: ValueKey(_label),
+              style: const TextStyle(
+                color: AppColors.textTertiary,
+                fontSize: 14,
+              ),
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 }
 
-class _MessageList extends StatelessWidget {
-  final List<ChatMessageModel> messages;
-  final String streamingAssistantText;
-  final ScrollController scrollController;
-  final bool isStreaming;
-  final String streamingText;
-  final String? thinkingMessage;
-  final OnRetry onRetry;
-  final OnEdit onEdit;
-  final OnFeedback onFeedback;
-  final VoidCallback onViewReminders;
-  final void Function(String clarificationId, List<String> options)
-      onClarificationSubmit;
+// ── Voice status card ─────────────────────────────────────────────────────────
 
-  const _MessageList({
-    required this.messages,
-    required this.streamingAssistantText,
-    required this.scrollController,
-    required this.isStreaming,
-    required this.streamingText,
-    required this.onRetry,
-    required this.onEdit,
-    required this.onFeedback,
-    required this.onViewReminders,
-    required this.onClarificationSubmit,
-    this.thinkingMessage,
-  });
+class _VoiceStatusCard extends StatelessWidget {
+  final HomeViewModel vm;
+  const _VoiceStatusCard({required this.vm});
 
   @override
   Widget build(BuildContext context) {
-    final draftVisible = streamingAssistantText.trim().isNotEmpty;
-    final totalItems =
-        messages.length + (isStreaming ? 1 : 0) + (draftVisible ? 1 : 0);
-
-    // Find the last assistant message index for retry visibility
-    int lastAssistantIndex = -1;
-    for (var i = messages.length - 1; i >= 0; i--) {
-      if (!messages[i].isUser) {
-        lastAssistantIndex = i;
-        break;
-      }
-    }
-
-    return ListView.builder(
-      controller: scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: totalItems,
-      itemBuilder: (context, index) {
-        if (index < messages.length) {
-          final msg = messages[index];
-
-          // Clarification card — renders tappable option chips
-          if (msg.clarificationPayload != null) {
-            return ClarificationCard(
-              payload: msg.clarificationPayload!,
-              onSubmit: (options) => onClarificationSubmit(
-                msg.clarificationPayload!.clarificationId,
-                options,
+    final hasTranscript = vm.liveTranscript.trim().isNotEmpty;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      child: hasTranscript
+          ? Container(
+              margin: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.2)),
               ),
-            );
-          }
-
-          return JunoResponseBubble(
-            message: msg,
-            isLastAssistantMessage: index == lastAssistantIndex,
-            onRetry: onRetry,
-            onEdit: onEdit,
-            onFeedback: onFeedback,
-            onViewReminders: onViewReminders,
-          );
-        }
-
-        final afterIndex = index - messages.length;
-
-        // Text chat streaming bubble (SSE)
-        if (isStreaming && afterIndex == 0) {
-          return StreamingMessageBubble(
-            streamingText: streamingText,
-            thinkingMessage: thinkingMessage,
-            isLoading: true,
-          );
-        }
-
-        // Voice draft bubble
-        if (draftVisible && afterIndex == (isStreaming ? 1 : 0)) {
-          return JunoResponseBubble(
-            message: ChatMessageModel(
-              id: 'draft',
-              text: streamingAssistantText,
-              isUser: false,
-              timestamp: DateTime.now(),
-              channel: ChatMessageChannel.voice,
-            ),
-          );
-        }
-
-        return const SizedBox.shrink();
-      },
+              child: Text(
+                vm.liveTranscript,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 }
 
-class _HomeDrawer extends StatelessWidget {
-  final String userName;
-  final String userEmail;
-  final List<ChatSession> sessions;
-  final String? currentSessionId;
+// ── Drawer ────────────────────────────────────────────────────────────────────
+
+class _ChatDrawer extends StatelessWidget {
   final VoidCallback onNewChat;
   final void Function(String sessionId) onSelectSession;
 
-  const _HomeDrawer({
-    required this.userName,
-    required this.userEmail,
-    required this.sessions,
-    required this.currentSessionId,
-    required this.onNewChat,
-    required this.onSelectSession,
-  });
+  const _ChatDrawer({required this.onNewChat, required this.onSelectSession});
 
   @override
   Widget build(BuildContext context) {
@@ -631,128 +323,170 @@ class _HomeDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
+            // Profile row
+            Consumer<AuthViewModel>(
+              builder: (_, authVm, __) => Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.person_rounded,
+                          color: AppColors.accent, size: 22),
                     ),
-                    child: const Icon(
-                      Icons.person_rounded,
-                      color: AppColors.accent,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          userName,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (userEmail.isNotEmpty)
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            userEmail,
+                            authVm.user?.displayName ?? 'User',
                             style: const TextStyle(
-                              color: AppColors.textTertiary,
-                              fontSize: 12,
+                              color: AppColors.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                      ],
+                          if ((authVm.user?.email ?? '').isNotEmpty)
+                            Text(
+                              authVm.user!.email!,
+                              style: const TextStyle(
+                                  color: AppColors.textTertiary, fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const Divider(color: AppColors.divider, height: 1),
             ListTile(
-              leading: const Icon(Icons.add_rounded, color: AppColors.accent),
-              title: const Text(
-                'New Chat',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
-              ),
+              leading:
+                  const Icon(Icons.add_rounded, color: AppColors.accent),
+              title: const Text('New Chat',
+                  style: TextStyle(
+                      color: AppColors.textPrimary, fontSize: 14)),
               onTap: onNewChat,
             ),
             const Divider(color: AppColors.divider, height: 1),
-            if (sessions.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Recent Chats',
-                    style: const TextStyle(
-                      color: AppColors.textTertiary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ),
+            // Recent Buddy chat sessions (agentId IS NULL)
             Expanded(
-              child: ListView.builder(
-                itemCount: sessions.length,
-                itemBuilder: (context, index) {
-                  final session = sessions[index];
-                  final isSelected = session.id == currentSessionId;
-                  final label = session.title?.isNotEmpty == true
-                      ? session.title!
-                      : 'Chat ${index + 1}';
-                  return ListTile(
-                    selected: isSelected,
-                    selectedTileColor: AppColors.accent.withValues(alpha: 0.08),
-                    leading: Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      color: isSelected ? AppColors.accent : AppColors.textTertiary,
-                      size: 18,
-                    ),
-                    title: Text(
-                      label,
-                      style: TextStyle(
-                        color: isSelected ? AppColors.accent : AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      _formatDate(session.startedAt),
-                      style: const TextStyle(
-                        color: AppColors.textTertiary,
-                        fontSize: 11,
-                      ),
-                    ),
-                    onTap: () => onSelectSession(session.id),
-                  );
-                },
-              ),
+              child: _SessionList(onSelectSession: onSelectSession),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _SessionList extends StatefulWidget {
+  final void Function(String sessionId) onSelectSession;
+  const _SessionList({required this.onSelectSession});
+
+  @override
+  State<_SessionList> createState() => _SessionListState();
+}
+
+class _SessionListState extends State<_SessionList> {
+  List<ChatSession> _sessions = [];
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final repo = context.read<ChatRepository>();
+    final result = await repo.loadMainSessions(limit: 25);
+    result.when(
+      success: (s) => setState(() {
+        _sessions = s;
+        _loaded = true;
+      }),
+      failure: (_) => setState(() => _loaded = true),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) {
+      return const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_sessions.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Text('No recent chats',
+            style: TextStyle(color: AppColors.textTertiary, fontSize: 13)),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            'RECENT CHATS',
+            style: TextStyle(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _sessions.length,
+            itemBuilder: (_, i) {
+              final s = _sessions[i];
+              final label = s.title?.isNotEmpty == true
+                  ? s.title!
+                  : 'Chat ${i + 1}';
+              return ListTile(
+                leading: const Icon(Icons.chat_bubble_outline_rounded,
+                    color: AppColors.textTertiary, size: 18),
+                title: Text(
+                  label,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  _formatDate(s.startedAt),
+                  style: const TextStyle(
+                      color: AppColors.textTertiary, fontSize: 11),
+                ),
+                onTap: () => widget.onSelectSession(s.id),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
   String _formatDate(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
+    final diff = DateTime.now().difference(dt);
     if (diff.inDays == 0) return 'Today';
     if (diff.inDays == 1) return 'Yesterday';
     if (diff.inDays < 7) return '${diff.inDays} days ago';
@@ -760,70 +494,28 @@ class _HomeDrawer extends StatelessWidget {
   }
 }
 
-class _InputArea extends StatelessWidget {
-  final TextEditingController controller;
-  final VoidCallback onSend;
-  final VoidCallback onMicTap;
+// ── Reusable icon button ──────────────────────────────────────────────────────
 
-  const _InputArea({
-    required this.controller,
-    required this.onSend,
-    required this.onMicTap,
-  });
+class _IconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _IconButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.watch<HomeViewModel>();
-    final isLoading = vm.state == ViewState.loading;
-    final micDisabled = isLoading && !vm.hasActiveVoiceSession;
-    final hint = vm.hasActiveVoiceSession
-        ? 'Send text to your buddy...'
-        : 'Ask Juno anything...';
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AppColors.divider)),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: micDisabled ? null : onMicTap,
-            child: Opacity(
-              opacity: micDisabled ? 0.4 : 1.0,
-              child: Container(
-                width: 48,
-                height: 48,
-                margin: const EdgeInsets.only(right: 12),
-                decoration: BoxDecoration(
-                  color: vm.hasActiveVoiceSession
-                      ? AppColors.micProcessing
-                      : AppColors.surface,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: vm.hasActiveVoiceSession
-                        ? AppColors.micProcessing.withValues(alpha: 0.5)
-                        : AppColors.border,
-                  ),
-                ),
-                child: Icon(
-                  vm.hasActiveVoiceSession ? Icons.stop_rounded : Icons.mic_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: JunoTextField(
-              controller: controller,
-              hint: hint,
-              enabled: !isLoading,
-              onSend: onSend,
-              onSubmitted: (_) => onSend(),
-            ),
-          ),
-        ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Icon(icon, color: AppColors.textPrimary, size: 22),
       ),
     );
   }

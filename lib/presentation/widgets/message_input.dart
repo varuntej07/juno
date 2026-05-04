@@ -1,0 +1,93 @@
+import 'package:flutter/material.dart';
+
+import '../../core/theme/app_colors.dart';
+import 'juno_text_field.dart';
+
+/// Text input bar at the bottom of any chat screen.
+/// Fully self-contained: owns its [TextEditingController] so keystrokes never
+/// trigger rebuilds in parent widgets.
+class MessageInput extends StatefulWidget {
+  final bool isLoading;
+  final String hint;
+  final void Function(String text) onSend;
+
+  const MessageInput({
+    super.key,
+    required this.onSend,
+    this.isLoading = false,
+    this.hint = 'Message…',
+  });
+
+  @override
+  State<MessageInput> createState() => _MessageInputState();
+}
+
+class _MessageInputState extends State<MessageInput> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    final text = _controller.text.trim();
+    if (text.isEmpty || widget.isLoading) return;
+    _controller.clear();
+    widget.onSend(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.divider)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: JunoTextField(
+                controller: _controller,
+                hint: widget.hint,
+                enabled: !widget.isLoading,
+                onSubmitted: (_) => _send(),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _SendButton(onTap: _send, enabled: !widget.isLoading),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SendButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final bool enabled;
+
+  const _SendButton({required this.onTap, required this.enabled});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: AnimatedOpacity(
+        opacity: enabled ? 1.0 : 0.4,
+        duration: const Duration(milliseconds: 150),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: const BoxDecoration(
+            color: AppColors.accent,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}

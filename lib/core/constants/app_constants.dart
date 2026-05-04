@@ -6,6 +6,8 @@ class AppConstants {
   static const apiReadTimeout = Duration(seconds: 10);
   // Claude multi-turn with tool use + exponential backoff can take 15-30s under load.
   static const chatRequestTimeout = Duration(seconds: 45);
+  static const chatStreamConnectTimeout = Duration(seconds: 10);
+  static const chatStreamIdleTimeout = Duration(seconds: 60);
   // Nutrition scan invokes Vertex AI Gemini VLM — allow extra time for vision inference.
   static const nutritionScanTimeout = Duration(seconds: 45);
   static const apiWriteTimeout = Duration(seconds: 30);

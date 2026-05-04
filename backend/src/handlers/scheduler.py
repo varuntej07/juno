@@ -90,6 +90,12 @@ async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str
                     "error": str(exc),
                 })
 
+        logger.info("Scheduler tick complete", {
+            "scanned": len(due),
+            "delivered": delivered,
+            "calendar_syncs": synced_calendars,
+            "renewed_calendar_channels": renewed_channels,
+        })
         return _json(200, {
             "scanned": len(due),
             "delivered": delivered,

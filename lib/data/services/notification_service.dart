@@ -20,6 +20,17 @@ class EngagementTapPayload {
   });
 }
 
+/// Payload emitted when the user taps a scheduled agent nudge notification.
+class AgentNudgeTapPayload {
+  final String agentId;
+  final String chatOpener;
+
+  const AgentNudgeTapPayload({
+    required this.agentId,
+    required this.chatOpener,
+  });
+}
+
 const _tag = 'NotificationService';
 
 /// Android notification channel used for all Juno notifications.
@@ -55,11 +66,16 @@ class NotificationService {
 
   final _engagementTapController =
       StreamController<EngagementTapPayload>.broadcast();
+  final _agentNudgeTapController =
+      StreamController<AgentNudgeTapPayload>.broadcast();
 
   /// Emits when the user taps an engagement notification.
-  /// Subscribe in HomeViewModel to open chat with pre-loaded context.
   Stream<EngagementTapPayload> get engagementTapStream =>
       _engagementTapController.stream;
+
+  /// Emits when the user taps a scheduled agent nudge notification.
+  Stream<AgentNudgeTapPayload> get agentNudgeTapStream =>
+      _agentNudgeTapController.stream;
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -155,6 +171,7 @@ class NotificationService {
     _userId = null;
     _initialized = false;
     await _engagementTapController.close();
+    await _agentNudgeTapController.close();
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -254,6 +271,16 @@ class NotificationService {
           engagementId: engagementId,
           initialMessage: initialMessage,
           agentContext: agentContext,
+        ));
+      }
+    } else if (notificationType == 'agent_nudge') {
+      final agentId = message.data['agent_id'] as String? ?? '';
+      final chatOpener = message.data['chat_opener'] as String? ?? '';
+
+      if (agentId.isNotEmpty) {
+        _agentNudgeTapController.add(AgentNudgeTapPayload(
+          agentId: agentId,
+          chatOpener: chatOpener,
         ));
       }
     }

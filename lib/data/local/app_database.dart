@@ -11,6 +11,8 @@ class ChatSessions extends Table {
   DateTimeColumn get lastMessageAt => dateTime().nullable()();
   TextColumn get lastMessagePreview => text().nullable()();
   IntColumn get messageCount => integer().withDefault(const Constant(0))();
+  // v7: links a session to a specific agent; null = main Buddy chat
+  TextColumn get agentId => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -60,7 +62,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -155,6 +157,11 @@ class AppDatabase extends _$AppDatabase {
           if (from < 6) {
             await customStatement(
               'ALTER TABLE "chat_messages" ADD COLUMN "clarification_json" TEXT',
+            );
+          }
+          if (from < 7) {
+            await customStatement(
+              'ALTER TABLE "chat_sessions" ADD COLUMN "agent_id" TEXT',
             );
           }
         },

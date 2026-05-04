@@ -1,55 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'core/theme/app_theme.dart';
-import 'presentation/screens/app_shell.dart';
-import 'presentation/screens/auth/login_screen.dart';
-import 'presentation/viewmodels/auth_viewmodel.dart';
-import 'presentation/widgets/loading_indicator.dart';
 
-class JunoApp extends StatelessWidget {
+import 'core/router/router.dart';
+import 'core/theme/app_theme.dart';
+import 'presentation/viewmodels/auth_viewmodel.dart';
+
+class JunoApp extends StatefulWidget {
   const JunoApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Juno',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark,
-      home: const _RootScreen(),
-    );
-  }
+  State<JunoApp> createState() => _JunoAppState();
 }
 
-class _RootScreen extends StatefulWidget {
-  const _RootScreen();
+class _JunoAppState extends State<JunoApp> {
+  late final GoRouter _router;
 
-  @override
-  State<_RootScreen> createState() => _RootScreenState();
-}
-
-class _RootScreenState extends State<_RootScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AuthViewModel>().initialize();
-    });
+    // context.read is safe in initState — widget is already in the tree.
+    _router = buildRouter(context.read<AuthViewModel>());
+    // Kick off auth state resolution; the router's refreshListenable fires once
+    // AuthViewModel.state leaves idle/loading, triggering the redirect.
+    context.read<AuthViewModel>().initialize();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AuthViewModel>(
-      builder: (context, vm, _) {
-        if (vm.state == ViewState.loading || vm.state == ViewState.idle) {
-          return const Scaffold(
-            body: FullScreenLoader(message: 'Starting Juno...'),
-          );
-        }
-        if (vm.isAuthenticated) {
-          return const AppShell();
-        }
-        return const LoginScreen();
-      },
+    return MaterialApp.router(
+      title: 'Juno',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.dark,
+      routerConfig: _router,
     );
   }
 }

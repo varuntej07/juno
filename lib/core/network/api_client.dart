@@ -158,36 +158,89 @@ class ApiClient {
     Map<String, dynamic> body,
   ) async* {
     final url = Uri.parse('${Environment.current.apiBaseUrl}$path');
-    final headers = await _headers();
-    headers['Accept'] = 'text/event-stream';
+    final encodedBody = jsonEncode(body);
 
-    final request = http.Request('POST', url)
-      ..headers.addAll(headers)
-      ..body = jsonEncode(body);
+    for (var attempt = 0; attempt < AppConstants.maxApiRetries; attempt++) {
+      final headers = await _headers();
+      headers['Accept'] = 'text/event-stream';
+      final request = http.Request('POST', url)
+        ..headers.addAll(headers)
+        ..body = encodedBody;
+      final client = http.Client();
+      final stopwatch = Stopwatch()..start();
+      var streamAccepted = false;
 
-    final client = http.Client();
-    try {
-      final streamedResponse = await client.send(request);
+      try {
+        final streamedResponse = await client
+            .send(request)
+            .timeout(AppConstants.chatStreamConnectTimeout);
+        stopwatch.stop();
 
-      if (streamedResponse.statusCode < 200 || streamedResponse.statusCode >= 300) {
         AppLogger.network(
-          'POST-STREAM', url.toString(), streamedResponse.statusCode, Duration.zero,
+          'POST-STREAM',
+          url.toString(),
+          streamedResponse.statusCode,
+          stopwatch.elapsed,
         );
-        throw NetworkException.fromStatusCode(streamedResponse.statusCode, '');
-      }
 
-      AppLogger.network('POST-STREAM', url.toString(), streamedResponse.statusCode, Duration.zero);
-
-      await for (final line in streamedResponse.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
-        if (line.startsWith('data: ')) {
-          final data = line.substring(6).trim();
-          if (data.isNotEmpty && data != '[DONE]') yield data;
+        if (streamedResponse.statusCode < 200 ||
+            streamedResponse.statusCode >= 300) {
+          final error = NetworkException.fromStatusCode(
+            streamedResponse.statusCode,
+            '',
+          );
+          if (error.isRetryable && attempt < AppConstants.maxApiRetries - 1) {
+            await _backoffDelay(attempt);
+            continue;
+          }
+          throw error;
         }
+
+        // Once the server has accepted the stream, do not retry. A retry could
+        // duplicate tool calls or replay partial assistant text.
+        streamAccepted = true;
+        await for (final line in streamedResponse.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .timeout(AppConstants.chatStreamIdleTimeout)) {
+          if (line.startsWith('data: ')) {
+            final data = line.substring(6).trim();
+            if (data.isNotEmpty && data != '[DONE]') yield data;
+          }
+        }
+        return;
+      } on SocketException {
+        if (!streamAccepted && attempt < AppConstants.maxApiRetries - 1) {
+          await _backoffDelay(attempt);
+          continue;
+        }
+        throw AppException.networkUnavailable();
+      } on TimeoutException {
+        if (!streamAccepted && attempt < AppConstants.maxApiRetries - 1) {
+          await _backoffDelay(attempt);
+          continue;
+        }
+        throw AppException.requestTimeout();
+      } on HttpException catch (e) {
+        if (!streamAccepted && attempt < AppConstants.maxApiRetries - 1) {
+          await _backoffDelay(attempt);
+          continue;
+        }
+        throw AppException.unexpected(e.message, error: e);
+      } catch (e, st) {
+        if (e is AppException) rethrow;
+        AppLogger.error(
+          'Unexpected streaming API client failure',
+          error: e,
+          stackTrace: st,
+          tag: 'ApiClient',
+          metadata: {'path': path, 'attempt': attempt + 1},
+        );
+        throw AppException.unexpected(e.toString(), error: e, stackTrace: st);
+      } finally {
+        client.close();
+        if (stopwatch.isRunning) stopwatch.stop();
       }
-    } finally {
-      client.close();
     }
   }
 

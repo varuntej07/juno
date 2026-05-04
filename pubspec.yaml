@@ -33,6 +33,7 @@ dependencies:
   drift:
   drift_flutter:
   sqlite3_flutter_libs:
+  go_router:
 
 dev_dependencies:
   flutter_test:

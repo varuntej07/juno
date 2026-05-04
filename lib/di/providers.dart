@@ -110,13 +110,9 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     ),
     ChangeNotifierProvider<HomeViewModel>(
       create: (_) => HomeViewModel(
-        backendService: backendApiService,
-        connectivityService: connectivityService,
         voiceSessionService: voiceSessionService,
         wakeWordService: wakeWordService,
         chatRepository: chatRepository,
-        chatBackupService: chatBackupService,
-        feedbackService: feedbackService,
         notificationService: notificationService,
       ),
     ),

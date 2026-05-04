@@ -117,6 +117,13 @@ async def handle_send_nudge(body: dict[str, Any]) -> dict[str, Any]:
         })
         return {"error": "missing_content", "status_code": 400}
 
+    logger.info("daily_notification: attempting FCM send", {
+        "user_id": user_id,
+        "nudge_slot": nudge_slot,
+        "plan_date": plan_date,
+        "title": title,
+    })
+
     # Send via FCM
     result = await send_notification(
         user_id,
