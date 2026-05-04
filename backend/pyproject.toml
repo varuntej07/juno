@@ -40,6 +40,9 @@ dependencies = [
     # RSS feed parsing (daily notification news fallback)
     "feedparser>=6.0",
 
+    # Async HTTP clients for scheduled agent data fetchers
+    "httpx>=0.28",
+
     # LangSmith for LLM observability and tracing
     "langsmith>=0.2",
 
@@ -49,6 +52,40 @@ dependencies = [
 dev = [
     "ruff>=0.9",
     "pyright>=1.1",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore:langsmith.wrappers._openai_agents is deprecated",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/agent/*",
+    "src/agents/*",
+    "src/handlers/chat.py",
+    "src/handlers/connectors.py",
+    "src/handlers/devices.py",
+    "src/handlers/dietary_profile.py",
+    "src/handlers/engagement.py",
+    "src/handlers/notification_reply.py",
+    "src/handlers/nutrition.py",
+    "src/handlers/scheduled_agents.py",
+    "src/main.py",
+    "src/services/claude_client.py",
+    "src/services/engagement/*",
+    "src/services/gemini_client.py",
+    "src/services/google_calendar_connector.py",
+    "src/services/model_provider.py",
+    "src/services/request_auth.py",
+    "src/services/tool_executor.py",
+    "src/shared/*",
+    "src/lib/query_logger.py",
 ]
 
 [tool.setuptools.packages.find]
@@ -57,7 +94,7 @@ include = ["src*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

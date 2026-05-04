@@ -1,28 +1,45 @@
 # Juno Backend
 
-This backend is split across two execution models:
+FastAPI backend for the Juno/Buddy mobile app, deployed on Google Cloud Run.
 
-- `src/voice-gateway/`: a stateful WebSocket worker that owns the realtime Nova Sonic session. This is the only safe place to proxy full-duplex audio and tool use.
-- `src/handlers/`: stateless Lambda-friendly HTTP/background handlers for text chat, notification replies, and scheduled reminder delivery.
+## Runtime Model
 
-Why not Lambda-only for voice:
+- `src/main.py`: FastAPI HTTP API served by `uvicorn` on Cloud Run.
+- `src/agent/voice_agent.py`: LiveKit voice worker, run as a separate long-lived process.
+- `src/handlers/`: REST and scheduled endpoint logic for chat, nutrition, reminders, devices, connectors, engagement, and daily notifications.
+- `src/services/`: integrations for Claude, Gemini/Vertex AI, Firebase, Google Calendar, FCM, Cloud Tasks, and tool execution.
 
-- API Gateway WebSocket + Lambda is fine for discrete messages.
-- Nova Sonic speech sessions require a long-lived bidirectional stream with shared in-memory state across incoming audio frames, tool calls, and outgoing audio/text deltas.
-- A dedicated voice gateway matches that requirement cleanly. It also mirrors the transport pattern used in working Nova Sonic samples.
+Voice is handled through LiveKit:
 
-## Structure
+- Deepgram for speech-to-text.
+- Claude for assistant reasoning.
+- Cartesia for text-to-speech.
+- Silero VAD through LiveKit Agents.
 
-- `src/shared/`: transport contracts and shared tool definitions
-- `src/services/`: Bedrock, Claude, Firestore, Calendar, FCM, and tool execution
-- `src/voice-gateway/`: websocket server and realtime session orchestration
-- `src/handlers/`: REST and scheduled entrypoints
+## Run Locally
 
-## Run locally
+Run the HTTP API:
 
 ```bash
-npm install
-npm run dev:voice
+cd backend
+uvicorn src.main:app --reload --port 8000
 ```
 
-The Flutter app should point `wsBaseUrl` at the voice gateway and `apiBaseUrl` at your REST deployment.
+Run the voice worker in a second terminal:
+
+```bash
+cd backend
+python -m src.agent.voice_agent start
+```
+
+The Flutter app should point `apiBaseUrl` at the FastAPI service and use LiveKit for voice sessions.
+
+## Deploy
+
+From the repository root:
+
+```bash
+gcloud run deploy juno-backend --source backend/ --region us-central1 --project juno-2ea45
+```
+
+Cloud Run environment variables and secrets are persisted. Only pass `--set-env-vars` or `--set-secrets` when changing configuration.
