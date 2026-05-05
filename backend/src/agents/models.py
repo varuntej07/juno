@@ -6,7 +6,7 @@ class NotificationContent(BaseModel):
     """Output from an agent's build_notification call."""
     title: str
     body: str
-    chat_opener: str  # first message shown in the chat thread when user taps
+    opening_chat_message: str  # first message shown in the chat thread when user taps
 
 
 class UserFeedback(BaseModel):

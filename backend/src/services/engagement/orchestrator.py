@@ -138,7 +138,7 @@ async def _orchestrate(
         "chosen_agent": decision.chosen_agent,
         "notification_title": notification.title,        # type: ignore[union-attr]
         "notification_body": notification.body,          # type: ignore[union-attr]
-        "initial_chat_message": notification.initial_chat_message,  # type: ignore[union-attr]
+        "opening_chat_message": notification.opening_chat_message,  # type: ignore[union-attr]
         "suggested_replies": notification.suggested_replies,        # type: ignore[union-attr]
         "engagement_context": decision.engagement_context,
         "cloud_task_name": None,

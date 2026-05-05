@@ -15,14 +15,14 @@ repeat the event title. If there's no description, keep it brief and time-aware.
 Rules:
   - title: max 50 chars, time-aware ("in 2h", "in 90 min")
   - body: max 100 chars — the one thing they need to act on
-  - initial_chat_message: offer to help them prep (1-2 sentences)
+  - opening_chat_message: offer to help them prep (1-2 sentences)
   - suggested_replies: 2-3 chips ("Help me prep", "I'm ready", "What should I ask?")
 
 Return ONLY valid JSON:
 {
   "title": "...",
   "body": "...",
-  "initial_chat_message": "...",
+  "opening_chat_message": "...",
   "suggested_replies": ["...", "...", "..."]
 }"""
 
@@ -50,7 +50,7 @@ Attendees: {", ".join(attendees[:5]) or "(none listed)"}
 
 Return JSON only."""
 
-        return await self._models.fast(
+        return await self._models.cheap(
             prompt,
             system=_SYSTEM_PROMPT,
             response_model=NotificationOutput,

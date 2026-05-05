@@ -31,6 +31,7 @@ from ..lib.query_logger import log_query
 from ..services.claude_client import ClaudeClient
 from ..services.request_auth import resolve_user_id
 from ..services.tool_executor import ToolExecutor
+from ..services.user_aura_extractor import extract_and_update_user_aura
 
 
 async def _get_user_local_datetime(uid: str) -> str:
@@ -147,9 +148,9 @@ async def handle_chat_stream(event: dict[str, Any]) -> StreamingResponse:
     datetime_line = f"Current date and time: {await _get_user_local_datetime(user_id)}"
     agent_prompt = get_system_prompt(agent_id) if agent_id else None
     effective_system_prompt = (
-        f"{datetime_line}\n\n{agent_prompt}\n\n---\n\n{settings.JUNO_DEFAULT_SYSTEM_PROMPT}"
+        f"{datetime_line}\n\n{agent_prompt}\n\n---\n\n{settings.BUDDY_CHAT_SYSTEM_PROMPT}"
         if agent_prompt
-        else f"{datetime_line}\n\n{settings.JUNO_DEFAULT_SYSTEM_PROMPT}"
+        else f"{datetime_line}\n\n{settings.BUDDY_CHAT_SYSTEM_PROMPT}"
     )
 
     await log_query(
@@ -159,6 +160,7 @@ async def handle_chat_stream(event: dict[str, Any]) -> StreamingResponse:
         session_id=session_id,
         client_message_id=client_message_id,
     )
+    asyncio.create_task(extract_and_update_user_aura(user_id, message))
 
     logger.info(
         "Chat: stream request received",

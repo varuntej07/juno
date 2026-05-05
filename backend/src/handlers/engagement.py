@@ -146,7 +146,7 @@ async def _handle_send_first(
         data={
             "deep_link": "chat",
             "engagement_id": engagement_id,
-            "initial_message": doc["initial_chat_message"],
+            "initial_message": doc["opening_chat_message"],
             "suggested_replies": ",".join(doc.get("suggested_replies") or []),
             "agent_context": doc.get("chosen_agent", ""),
         },
@@ -211,7 +211,7 @@ async def _handle_check_and_reengage(
         data={
             "deep_link": "chat",
             "engagement_id": engagement_id,
-            "initial_message": copy.initial_chat_message,
+            "initial_message": copy.opening_chat_message,
             "agent_context": doc.get("chosen_agent", ""),
         },
         notification_type="engagement",
@@ -272,7 +272,7 @@ async def _handle_check_and_expire(
         data={
             "deep_link": "chat",
             "engagement_id": engagement_id,
-            "initial_message": copy.initial_chat_message,
+            "initial_message": copy.opening_chat_message,
             "agent_context": doc.get("chosen_agent", ""),
         },
         notification_type="engagement",

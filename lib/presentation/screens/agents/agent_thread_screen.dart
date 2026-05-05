@@ -12,6 +12,50 @@ import '../../widgets/error_display.dart';
 import '../../widgets/message_input.dart';
 import '../reminders/reminders_screen.dart';
 
+/// Horizontally scrollable row of quick-start suggestion pills shown above the
+/// input bar. Tapping a pill writes its text into the input field.
+class _SuggestionPillsRow extends StatelessWidget {
+  final List<String> pills;
+  final void Function(String pill) onTap;
+
+  const _SuggestionPillsRow({required this.pills, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: pills.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final pill = pills[i];
+          return GestureDetector(
+            onTap: () => onTap(pill),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: Text(
+                pill,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// Full-screen chat thread for a single agent.
 /// The [AgentViewModel] is scoped to this route by the router (created on
 /// push, disposed on pop) — no global state leaks between agents.
@@ -30,6 +74,7 @@ class AgentThreadScreen extends StatefulWidget {
 
 class _AgentThreadScreenState extends State<AgentThreadScreen> {
   final _scrollController = ScrollController();
+  final _inputController = TextEditingController();
 
   Agent get _agent =>
       kAgents.firstWhere((a) => a.id == widget.agentId,
@@ -44,16 +89,16 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       final uid = context.read<AuthViewModel>().user?.uid;
-      await context.read<AgentViewModel>().init(uid);
-      _scrollToBottom();
+      context.read<AgentViewModel>().init(uid).then((_) => _scrollToBottom());
     });
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _inputController.dispose();
     super.dispose();
   }
 
@@ -166,9 +211,20 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
                       onDismiss: vm.clearError,
                     ),
                   ),
+                if (vm.suggestionPills.isNotEmpty && !vm.isStreaming)
+                  _SuggestionPillsRow(
+                    pills: vm.suggestionPills,
+                    onTap: (pill) {
+                      _inputController.text = pill;
+                      _inputController.selection = TextSelection.collapsed(
+                        offset: pill.length,
+                      );
+                    },
+                  ),
                 MessageInput(
                   isLoading: vm.state == ViewState.loading,
                   hint: 'Ask ${agent.name}…',
+                  controller: _inputController,
                   onSend: (text) {
                     vm.sendMessage(text, _uid);
                     _scrollToBottom();

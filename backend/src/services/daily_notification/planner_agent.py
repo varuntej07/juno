@@ -90,7 +90,7 @@ class NotificationPlannerAgent:
             DailyPlan with morning_nudge and evening_nudge.
         """
         prompt = _build_prompt(context)
-        return await self._models.fast(
+        return await self._models.cheap(
             prompt,
             system=_SYSTEM_PROMPT,
             response_model=DailyPlan,

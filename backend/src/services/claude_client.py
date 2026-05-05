@@ -34,19 +34,9 @@ _RETRYABLE_ERRORS = (
 EXCLUDED_TOOLS_FOR_GENERAL_CHAT = {"get_user_context", "web_search"}
 EXCLUDED_TOOLS_FOR_AGENT_CHAT = {"get_user_context"}
 
-_TOOL_STATUS_MESSAGES: dict[str, str] = {
-    "set_reminder": "Setting your reminder...",
-    "list_reminders": "Checking your reminders...",
-    "cancel_reminder": "Cancelling that reminder...",
-    "create_calendar_event": "Adding to your calendar...",
-    "get_upcoming_events": "Checking your schedule...",
-    "store_memory": "Saving that to memory...",
-    "query_memory": "Searching your memories...",
-    "analyze_nutrition": "Analysing nutrition...",
-    "get_user_context": "Reading your profile...",
-    "ask_clarification": "Formulating a question...",
-    "web_search": "Searching the web...",
-}
+# Text Claude generates before a tool call is typically a brief narration sentence.
+# Anything longer than this is almost certainly the start of a final response, not narration.
+_NARRATION_MAX_CHARS = 80
 
 
 class ClaudeClient:
@@ -96,7 +86,7 @@ class ClaudeClient:
         response: Any = None
 
         logger.info("Claude: starting conversation", {
-            "model": settings.ANTHROPIC_MODEL,
+            "model": settings.ANTHROPIC_CHAT_MODEL,
             "max_tokens": settings.ANTHROPIC_MAX_TOKENS,
             "user_text_len": len(user_text),
             "history_turns": len(prior),
@@ -105,14 +95,14 @@ class ClaudeClient:
         for turn in range(_MAX_TURNS):
             turn_start = time.monotonic()
             logger.debug(f"Claude: API call (turn {turn + 1}/{_MAX_TURNS})", {
-                "model": settings.ANTHROPIC_MODEL,
+                "model": settings.ANTHROPIC_CHAT_MODEL,
                 "messages_in_history": len(messages),
             })
 
             for attempt in range(1, _MAX_RETRIES + 1):
                 try:
                     response = await self._client.messages.create(
-                        model=settings.ANTHROPIC_MODEL,
+                        model=settings.ANTHROPIC_CHAT_MODEL,
                         max_tokens=settings.ANTHROPIC_MAX_TOKENS,
                         system=system_prompt,
                         tools=tools,  # type: ignore[arg-type]
@@ -149,7 +139,7 @@ class ClaudeClient:
             assert response is not None  # retry loop always raises or assigns
             turn_ms = int((time.monotonic() - turn_start) * 1000)
             logger.info(f"Claude: API response (turn {turn + 1})", {
-                "model": settings.ANTHROPIC_MODEL,
+                "model": settings.ANTHROPIC_CHAT_MODEL,
                 "stop_reason": response.stop_reason,
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
@@ -257,7 +247,7 @@ class ClaudeClient:
         text_started = False
 
         logger.info("Claude: starting stream", {
-            "model": settings.ANTHROPIC_MODEL,
+            "model": settings.ANTHROPIC_CHAT_MODEL,
             "user_text_len": len(user_text),
             "history_turns": len(prior),
         })
@@ -269,15 +259,52 @@ class ClaudeClient:
                 for attempt in range(1, _MAX_RETRIES + 1):
                     try:
                         async with self._client.messages.stream(
-                            model=settings.ANTHROPIC_MODEL,
+                            model=settings.ANTHROPIC_CHAT_MODEL,
                             max_tokens=settings.ANTHROPIC_MAX_TOKENS,
                             system=system_prompt,
                             tools=tools,  # type: ignore[arg-type]
                             messages=messages,  # type: ignore[arg-type]
                         ) as stream:
-                            async for chunk in stream.text_stream:
-                                text_started = True
-                                yield {"type": "text_delta", "delta": chunk}
+                            # Per-turn buffer: holds text until we know if this is a
+                            # tool-call turn (narration -> tool_thinking) or a final turn
+                            # (response -> text_delta). Once buffered chars exceed
+                            # _NARRATION_MAX_CHARS we commit to streaming as text_delta.
+                            turn_text_buffer: list[str] = []
+                            buffered_chars = 0
+                            committed_to_streaming = False
+
+                            async for event in stream:
+                                if event.type == "content_block_start":
+                                    if event.content_block.type == "tool_use":
+                                        narration = "".join(turn_text_buffer).strip()
+                                        if narration:
+                                            yield {"type": "tool_thinking", "message": narration}
+                                        turn_text_buffer.clear()
+                                        buffered_chars = 0
+
+                                elif event.type == "content_block_delta":
+                                    if event.delta.type == "text_delta":
+                                        chunk = event.delta.text
+                                        if committed_to_streaming:
+                                            text_started = True
+                                            yield {"type": "text_delta", "delta": chunk}
+                                        else:
+                                            turn_text_buffer.append(chunk)
+                                            buffered_chars += len(chunk)
+                                            if buffered_chars >= _NARRATION_MAX_CHARS:
+                                                committed_to_streaming = True
+                                                for c in turn_text_buffer:
+                                                    text_started = True
+                                                    yield {"type": "text_delta", "delta": c}
+                                                turn_text_buffer.clear()
+
+                                elif event.type == "message_delta":
+                                    if getattr(event.delta, "stop_reason", None) == "end_turn":
+                                        for chunk in turn_text_buffer:
+                                            text_started = True
+                                            yield {"type": "text_delta", "delta": chunk}
+                                        turn_text_buffer.clear()
+
                             response = await stream.get_final_message()
                         break  # success
                     except _RETRYABLE_ERRORS as exc:
@@ -304,14 +331,7 @@ class ClaudeClient:
                 if response.stop_reason != "tool_use":
                     break
 
-                # Tool turn yields status messages then executes concurrently
                 tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
-
-                for block in tool_use_blocks:
-                    yield {
-                        "type": "tool_thinking",
-                        "message": _TOOL_STATUS_MESSAGES.get(block.name, "Processing..."),
-                    }
 
                 async def _run_tool(block: Any) -> tuple[str, str, Any, Exception | None]:
                     try:

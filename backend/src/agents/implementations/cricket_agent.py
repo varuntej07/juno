@@ -31,17 +31,17 @@ class CricketAgent(ScheduledAgent):
         self,
         content: list[dict[str, Any]],
         user_config: dict[str, Any],
-        recent_feedback: list[dict[str, Any]],
+        interaction_history: list[dict[str, Any]],
     ) -> dict[str, str]:
         if not content:
             return {
                 "title": "CricBolt",
                 "body": "Nothing on the pitch today. Check back later.",
-                "chat_opener": "No live matches right now — want me to look up the schedule?",
+                "opening_chat_message": "No live matches right now — want me to look up the schedule?",
             }
 
         teams = user_config.get("teams", ["CSK", "RCB", "India"])
-        engagement_summary = _summarize_feedback(recent_feedback)
+        engagement_summary = _summarize_feedback(interaction_history)
 
         prompt = f"""You are CricBolt, a witty cricket analyst.
 
@@ -55,7 +55,7 @@ Generate a push notification with this JSON structure:
 {{
   "title": "<max 50 chars, punchy>",
   "body": "<max 100 chars, witty or informative>",
-  "chat_opener": "<1-2 sentences to start the chat thread, cricket voice>"
+  "opening_chat_message": "<1-2 sentences to start the chat thread, cricket voice>"
 }}
 
 Rules:
@@ -64,7 +64,7 @@ Rules:
 - No generic filler. Every word earns its place.
 - Return ONLY valid JSON, no markdown.
 """
-        result = await self._models.fast(
+        result = await self._models.cheap(
             prompt,
             system="You are CricBolt, a sharp cricket analyst. Output valid JSON only.",
         )
@@ -102,5 +102,5 @@ def _parse_notification_json(raw: Any) -> dict[str, str]:
         return {
             "title": "CricBolt",
             "body": "Cricket news is in. Tap to catch up.",
-            "chat_opener": "Got some cricket updates for you — want the highlights?",
+            "opening_chat_message": "Got some cricket updates for you — want the highlights?",
         }

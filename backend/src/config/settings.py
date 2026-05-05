@@ -45,7 +45,7 @@ class Settings(BaseSettings):
 
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    ANTHROPIC_CHAT_MODEL: str = "claude-sonnet-4-6"
     ANTHROPIC_MAX_TOKENS: int = 1024
 
     # Google Calendar (optional)
@@ -63,13 +63,14 @@ class Settings(BaseSettings):
     NUTRITION_SCAN_CONFIDENCE_THRESHOLD: float = 0.85
 
     # Model tiers
-    #   TIER_FAST -> background tasks, notification copy gen, simple classification
-    #   TIER_BALANCED -> tool-calling tasks that need reasoning but not top-tier quality
-    #   TIER_SMART -> main chat, complex multi-turn reasoning (most expensive)
+    #   TIER_CHEAP    -> cheap + fast; background tasks, notification copy, simple classification
+    #   TIER_BALANCED -> mid-tier; tool-calling tasks, structured output with reasoning
+    #   TIER_EXPERT   -> full reasoning; main chat, complex multi-turn (most expensive)
     # Provider is inferred from the model ID prefix by ModelProvider.
-    TIER_FAST: str = "gemini-2.5-flash"
+    TIER_CHEAP: str = "gemini-2.5-flash"
+    TIER_CHEAP_FALLBACK: str = "gemini-2.0-flash"  # used when TIER_CHEAP exhausts retries
     TIER_BALANCED: str = "claude-haiku-4-5-20251001"
-    TIER_SMART: str = "claude-sonnet-4-6"
+    TIER_EXPERT: str = "claude-sonnet-4-6"
 
     # Cloud Scheduler / Cloud Tasks -> service account for internal endpoints
     SCHEDULER_SA_EMAIL: str = "juno-scheduler@juno-2ea45.iam.gserviceaccount.com"
@@ -92,7 +93,7 @@ class Settings(BaseSettings):
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
 
     # Juno personality — text chat
-    JUNO_DEFAULT_SYSTEM_PROMPT: str = (
+    BUDDY_CHAT_SYSTEM_PROMPT: str = (
         "You are a friendly buddy, a proactive personal assistant that helps with reminders, "
         "scheduling, memory, and nutrition. Be warm, brief, and conversational. "
         "Never use emojis in your responses. "

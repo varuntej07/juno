@@ -92,9 +92,9 @@ async def _run(agent_id: str, user_id: str) -> None:
     agent = registry.get_agent(agent_id)
 
     # Step 1: Load user config + recent feedback in parallel
-    user_config, recent_feedback = await asyncio.gather(
+    user_config, interaction_history = await asyncio.gather(
         agent.load_user_config(user_id),
-        agent.load_recent_feedback(user_id, limit=20),
+        agent.load_interaction_history(user_id, limit=20),
     )
 
     if not user_config.get("enabled", True):
@@ -108,11 +108,11 @@ async def _run(agent_id: str, user_id: str) -> None:
     content = await agent.fetch_data(user_config)
 
     # Step 3: Build notification copy via LLM
-    notification = await agent.build_notification(content, user_config, recent_feedback)
+    notification = await agent.build_notification(content, user_config, interaction_history)
 
     title = notification.get("title", agent_id)
     body = notification.get("body", "")
-    chat_opener = notification.get("chat_opener", "")
+    opening_chat_message = notification.get("opening_chat_message", "")
 
     # Step 4: Send FCM push with agent_id in data payload
     nudge_id = str(uuid.uuid4())
@@ -123,7 +123,7 @@ async def _run(agent_id: str, user_id: str) -> None:
         data={
             "agent_id": agent_id,
             "nudge_id": nudge_id,
-            "chat_opener": chat_opener,
+            "opening_chat_message": opening_chat_message,
         },
         notification_type="agent_nudge",
     )
@@ -136,7 +136,7 @@ async def _run(agent_id: str, user_id: str) -> None:
         return
 
     # Step 5: Write engagement log
-    await _write_nudge_log(user_id, agent_id, nudge_id, title, body, chat_opener)
+    await _write_nudge_log(user_id, agent_id, nudge_id, title, body, opening_chat_message)
 
     logger.info("agent_orchestrator: nudge sent", {
         "agent_id": agent_id,
@@ -186,7 +186,7 @@ async def _write_nudge_log(
     nudge_id: str,
     title: str,
     body: str,
-    chat_opener: str,
+    opening_chat_message: str,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
     doc = {
@@ -194,7 +194,7 @@ async def _write_nudge_log(
         "nudge_id": nudge_id,
         "title": title,
         "body": body,
-        "chat_opener": chat_opener,
+        "opening_chat_message": opening_chat_message,
         "status": "sent",
         "created_at": now,
         "sent_at": now,

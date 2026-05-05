@@ -78,6 +78,10 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   /// Null for main Buddy chat; the agent identifier string for agent threads.
   String? get agentId;
 
+  /// The resolved, non-anonymous user ID set during [init]. Null if not yet
+  /// initialized or the user is anonymous.
+  String? get userId => _currentUserId;
+
   /// Exposed to subclasses for session bootstrapping.
   ChatRepository get chatRepository => _chatRepository;
 

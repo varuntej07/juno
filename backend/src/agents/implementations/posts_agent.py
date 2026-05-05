@@ -27,9 +27,9 @@ class PostsAgent(ScheduledAgent):
         self,
         content: list[dict[str, Any]],
         user_config: dict[str, Any],
-        recent_feedback: list[dict[str, Any]],
+        interaction_history: list[dict[str, Any]],
     ) -> dict[str, str]:
-        topics = _extract_topics_from_feedback(recent_feedback)
+        topics = _extract_topics_from_feedback(interaction_history)
         tone = user_config.get("tone", "thoughtful and direct")
         niche = user_config.get("niche", "tech")
 
@@ -37,7 +37,7 @@ class PostsAgent(ScheduledAgent):
             return {
                 "title": "PostForge",
                 "body": "Talk to me about something you find interesting — I'll turn it into a post.",
-                "chat_opener": "I don't have enough context on your style yet. What have you been thinking about lately?",
+                "opening_chat_message": "I don't have enough context on your style yet. What have you been thinking about lately?",
             }
 
         prompt = f"""You are PostForge, a ghostwriter who captures a person's authentic voice for social media.
@@ -53,16 +53,16 @@ Return this JSON structure:
 {{
   "title": "PostForge has a draft",
   "body": "<the actual tweet draft, under 140 chars for the notification preview>",
-  "chat_opener": "<present the full draft and ask if they want tweaks>"
+  "opening_chat_message": "<present the full draft and ask if they want tweaks>"
 }}
 
 Rules:
 - Write in first person as if it's the user's own thought
 - Be specific and opinionated — not a generic observation
-- The chat_opener should include the full draft (up to 280 chars) and ask for feedback
+- The opening_chat_message should include the full draft (up to 280 chars) and ask for feedback
 - Return ONLY valid JSON, no markdown.
 """
-        result = await self._models.fast(
+        result = await self._models.cheap(
             prompt,
             system="You are PostForge, a ghostwriter for social media. Output valid JSON only.",
         )
@@ -94,5 +94,5 @@ def _parse_notification_json(raw: Any) -> dict[str, str]:
         return {
             "title": "PostForge",
             "body": "Got a draft ready for you. Tap to review.",
-            "chat_opener": "I put together a draft post based on what you've been discussing — want to see it?",
+            "opening_chat_message": "I put together a draft post based on what you've been discussing — want to see it?",
         }

@@ -16,14 +16,14 @@ Generate a follow-up that matches the escalation level:
 Rules:
   - title: max 50 chars
   - body: max 100 chars
-  - initial_chat_message: re-open the conversation naturally
+  - opening_chat_message: re-open the conversation naturally
   - escalation_level: echo back the level you were given
 
 Return ONLY valid JSON:
 {
   "title": "...",
   "body": "...",
-  "initial_chat_message": "...",
+  "opening_chat_message": "...",
   "escalation_level": <1 or 2>
 }"""
 
@@ -47,7 +47,7 @@ Escalation level: {level}
 
 Return JSON only."""
 
-        return await self._models.fast(
+        return await self._models.cheap(
             prompt,
             system=_SYSTEM_PROMPT,
             response_model=ReEngagementOutput,

@@ -9,7 +9,7 @@ Stage 1 (pure Python, no LLM):
   - Both nudges on different topics?
   - Topics not identical to yesterday's?
 
-Stage 2 (single ModelProvider.fast() call):
+Stage 2 (single ModelProvider.cheap() call):
   - Tone appropriate for the user's profile?
   - Any sensitivity flags (eating disorders, mental health triggers)?
   - Content specific enough — no generic filler?
@@ -29,9 +29,9 @@ from .models import DailyPlan, VerificationResult
 
 # Allowed send windows (inclusive bounds, local time)
 MORNING_WINDOW_START = time(8, 0)    # 8:00 AM
-MORNING_WINDOW_END   = time(12, 0)   # 12:00 PM
+MORNING_WINDOW_END = time(12, 0)   # 12:00 PM
 EVENING_WINDOW_START = time(17, 0)   # 5:00 PM
-EVENING_WINDOW_END   = time(21, 0)   # 9:00 PM
+EVENING_WINDOW_END = time(21, 0)   # 9:00 PM
 
 # Minimum gap required between morning and evening nudge
 MIN_GAP_BETWEEN_NUDGES_HOURS = 4
@@ -126,7 +126,7 @@ EVENING NUDGE:
 
 Does this plan pass all checks? Return JSON only."""
 
-        return await self._models.fast(
+        return await self._models.cheap(
             prompt,
             system=_VERIFIER_SYSTEM_PROMPT,
             response_model=VerificationResult,

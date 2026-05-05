@@ -38,7 +38,7 @@ from .fcm_token_registry import (
 from .firebase import admin_messaging
 
 # Android notification channel created by the Flutter app on first launch.
-_ANDROID_CHANNEL_ID = "juno_default"
+_ANDROID_CHANNEL_ID = "aura_default"
 
 
 @dataclass

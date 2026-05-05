@@ -113,48 +113,58 @@ class _ReminderCardState extends State<ReminderCard>
                 left: BorderSide(color: AppColors.accent, width: 2),
               ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.alarm_outlined,
-                  size: 13,
-                  color: AppColors.accent,
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    widget.reminder.message,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12.5,
-                      height: 1.2,
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.alarm_outlined,
+                      size: 13,
+                      color: AppColors.accent,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  _timeLabel,
-                  style: const TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: 11,
-                  ),
-                ),
-                if (!_remaining.isNegative) ...[
-                  const Text(
-                    ' · ',
-                    style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
-                  ),
-                  Text(
-                    _countdown,
-                    style: const TextStyle(
-                      color: AppColors.accentLight,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        widget.reminder.message,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12.5,
+                          height: 1.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Text(
+                      _timeLabel,
+                      style: const TextStyle(
+                        color: AppColors.textTertiary,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (!_remaining.isNegative) ...[
+                      const Text(
+                        ' · ',
+                        style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+                      ),
+                      Text(
+                        _countdown,
+                        style: const TextStyle(
+                          color: AppColors.accentLight,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),

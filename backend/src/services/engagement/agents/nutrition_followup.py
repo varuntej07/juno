@@ -1,7 +1,7 @@
 """
 NutritionFollowupAgent — generates post-scan engagement notifications.
 
-Uses ModelProvider.fast() (Gemini Flash) — copy generation needs no heavy reasoning.
+Uses ModelProvider.cheap() (Gemini Flash) — copy generation needs no heavy reasoning.
 
 Tone mapping (set by DecisionEngine, not by this agent):
     educate   → first time eating this food
@@ -34,7 +34,7 @@ tone options:
 Rules:
   - title: max 50 chars, punchy, no corporate speak
   - body: max 100 chars, the real talk
-  - initial_chat_message: 1-2 sentences, sounds like picking up a conversation
+  - opening_chat_message: 1-2 sentences, sounds like picking up a conversation
   - suggested_replies: 2-3 short tappable chips the user can reply with
   - No "Great choice!" or "As an AI..." — be a friend, not an app
   - Mild profanity is okay if tone is roast
@@ -43,7 +43,7 @@ Return ONLY valid JSON, no markdown fences:
 {
   "title": "...",
   "body": "...",
-  "initial_chat_message": "...",
+  "opening_chat_message": "...",
   "suggested_replies": ["...", "...", "..."]
 }"""
 
@@ -77,7 +77,7 @@ Dietary restrictions: {", ".join(restrictions) or "none"}
 
 Remember: follow the tone exactly. Return JSON only."""
 
-        return await self._models.fast(
+        return await self._models.cheap(
             prompt,
             system=_SYSTEM_PROMPT,
             response_model=NotificationOutput,

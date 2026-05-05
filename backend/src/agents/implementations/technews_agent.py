@@ -33,17 +33,17 @@ class TechNewsAgent(ScheduledAgent):
         self,
         content: list[dict[str, Any]],
         user_config: dict[str, Any],
-        recent_feedback: list[dict[str, Any]],
+        interaction_history: list[dict[str, Any]],
     ) -> dict[str, str]:
         if not content:
             return {
                 "title": "BytePulse",
                 "body": "Feed is quiet today. Check back later.",
-                "chat_opener": "Nothing major dropped today — want me to search a specific topic?",
+                "opening_chat_message": "Nothing major dropped today — want me to search a specific topic?",
             }
 
         interests = user_config.get("interests", ["AI", "ML", "startups"])
-        engagement_summary = _summarize_feedback(recent_feedback)
+        engagement_summary = _summarize_feedback(interaction_history)
 
         prompt = f"""You are BytePulse, a sharp tech analyst who cuts through hype.
 
@@ -57,7 +57,7 @@ Generate a push notification with this JSON structure:
 {{
   "title": "<max 50 chars, punchy>",
   "body": "<max 100 chars, specific — name the actual story or paper>",
-  "chat_opener": "<1-2 sentences to kick off a tech conversation, no fluff>"
+  "opening_chat_message": "<1-2 sentences to kick off a tech conversation, no fluff>"
 }}
 
 Rules:
@@ -66,7 +66,7 @@ Rules:
 - Match interests when possible
 - Return ONLY valid JSON, no markdown.
 """
-        result = await self._models.fast(
+        result = await self._models.cheap(
             prompt,
             system="You are BytePulse, a sharp tech analyst. Output valid JSON only.",
         )
@@ -109,5 +109,5 @@ def _parse_notification_json(raw: Any) -> dict[str, str]:
         return {
             "title": "BytePulse",
             "body": "Big things are moving in tech. Tap to catch up.",
-            "chat_opener": "Got some interesting tech stories — want the highlights?",
+            "opening_chat_message": "Got some interesting tech stories — want the highlights?",
         }

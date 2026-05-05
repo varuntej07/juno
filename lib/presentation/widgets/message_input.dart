@@ -4,18 +4,21 @@ import '../../core/theme/app_colors.dart';
 import 'juno_text_field.dart';
 
 /// Text input bar at the bottom of any chat screen.
-/// Fully self-contained: owns its [TextEditingController] so keystrokes never
-/// trigger rebuilds in parent widgets.
+/// Owns its [TextEditingController] unless [controller] is provided externally.
+/// Pass an external controller when a sibling widget (e.g. suggestion pills)
+/// needs to write into the field.
 class MessageInput extends StatefulWidget {
   final bool isLoading;
   final String hint;
   final void Function(String text) onSend;
+  final TextEditingController? controller;
 
   const MessageInput({
     super.key,
     required this.onSend,
     this.isLoading = false,
     this.hint = 'Message…',
+    this.controller,
   });
 
   @override
@@ -23,11 +26,24 @@ class MessageInput extends StatefulWidget {
 }
 
 class _MessageInputState extends State<MessageInput> {
-  final _controller = TextEditingController();
+  late final TextEditingController _controller;
+  late final bool _ownsController;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.controller != null) {
+      _controller = widget.controller!;
+      _ownsController = false;
+    } else {
+      _controller = TextEditingController();
+      _ownsController = true;
+    }
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (_ownsController) _controller.dispose();
     super.dispose();
   }
 

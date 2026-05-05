@@ -32,6 +32,6 @@ class BaseAgent(ABC):
                      about the event (food name, tone, past scans, etc.)
 
         Returns:
-            NotificationOutput with title, body, initial_chat_message, suggested_replies
+            NotificationOutput with title, body, opening_chat_message, suggested_replies
         """
         ...

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/repositories/agent_suggestion_pills_repository.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/services/backend_api_service.dart';
 import '../../data/services/chat_backup_service.dart';
@@ -76,6 +77,8 @@ GoRouter buildRouter(AuthViewModel authViewModel) {
                 chatBackupService: context.read<ChatBackupService>(),
                 feedbackService: context.read<FeedbackService>(),
                 connectivityService: context.read<ConnectivityService>(),
+                suggestionPillsRepository:
+                    context.read<AgentSuggestionPillsRepository>(),
               ),
               child: AgentThreadScreen(agentId: agentId, chatOpener: chatOpener),
             ),

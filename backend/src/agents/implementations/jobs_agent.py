@@ -33,18 +33,18 @@ class JobsAgent(ScheduledAgent):
         self,
         content: list[dict[str, Any]],
         user_config: dict[str, Any],
-        recent_feedback: list[dict[str, Any]],
+        interaction_history: list[dict[str, Any]],
     ) -> dict[str, str]:
         if not content:
             return {
                 "title": "HuntMode",
                 "body": "No new listings today. Market's quiet.",
-                "chat_opener": "Nothing new on the boards today — want me to search a different role?",
+                "opening_chat_message": "Nothing new on the boards today — want me to search a different role?",
             }
 
         job_title = user_config.get("job_title", "your target role")
         skills = user_config.get("skills", [])
-        engagement_summary = _summarize_feedback(recent_feedback)
+        engagement_summary = _summarize_feedback(interaction_history)
 
         prompt = f"""You are HuntMode, a direct career coach who finds jobs worth applying to.
 
@@ -59,7 +59,7 @@ Generate a push notification with this JSON structure:
 {{
   "title": "<max 50 chars — include company name or role if notable>",
   "body": "<max 100 chars — specific: name company, role, or location>",
-  "chat_opener": "<1-2 sentences to discuss the listings, practical tone>"
+  "opening_chat_message": "<1-2 sentences to discuss the listings, practical tone>"
 }}
 
 Rules:
@@ -67,7 +67,7 @@ Rules:
 - If a listing looks like a strong match for the target role, highlight it
 - Return ONLY valid JSON, no markdown.
 """
-        result = await self._models.fast(
+        result = await self._models.cheap(
             prompt,
             system="You are HuntMode, a direct career coach. Output valid JSON only.",
         )
@@ -106,5 +106,5 @@ def _parse_notification_json(raw: Any) -> dict[str, str]:
         return {
             "title": "HuntMode",
             "body": "New listings dropped. Tap to see what's worth your time.",
-            "chat_opener": "Found some fresh listings — want me to walk you through them?",
+            "opening_chat_message": "Found some fresh listings — want me to walk you through them?",
         }

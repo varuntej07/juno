@@ -32,22 +32,28 @@ from ...services.model_provider import ModelProvider
 from . import rss_client
 from .models import DailyPlan, NudgePlan
 from .planner_agent import NotificationPlannerAgent
+from .suggestion_pills_agent import SuggestionPillsAgent
 from .verifier_agent import PushNotificationAgent
 
 
-# Module-level agent singletons 
+# Module-level agent singletons
 _models: ModelProvider | None = None
 _planner: NotificationPlannerAgent | None = None
 _verifier: PushNotificationAgent | None = None
+_suggestion_pills: SuggestionPillsAgent | None = None
 
 
-def _get_agents() -> tuple[NotificationPlannerAgent, PushNotificationAgent]:
-    global _models, _planner, _verifier
+def _get_agents() -> tuple[NotificationPlannerAgent, PushNotificationAgent, SuggestionPillsAgent]:
+    global _models, _planner, _verifier, _suggestion_pills
     if _models is None:
         _models = ModelProvider()
+    if _planner is None:
         _planner = NotificationPlannerAgent(_models)
+    if _verifier is None:
         _verifier = PushNotificationAgent(_models)
-    return _planner, _verifier  # type: ignore[return-value]
+    if _suggestion_pills is None:
+        _suggestion_pills = SuggestionPillsAgent(_models)
+    return _planner, _verifier, _suggestion_pills
 
 
 # Public entry point 
@@ -107,7 +113,7 @@ async def _run(user_id: str) -> None:
         "retry_feedback": None,
     }
 
-    planner, verifier = _get_agents()
+    planner, verifier, pills_agent = _get_agents()
 
     # Step 5: Plan
     plan = await planner.generate(context)
@@ -166,6 +172,16 @@ async def _run(user_id: str) -> None:
         logger.error("daily_notification: one or more nudge tasks failed to schedule", {
             "user_id": user_id,
             "date": today,
+        })
+
+    # Generate daily home-screen suggestion pills after the core notification
+    # pipeline is durable. Failure here must not affect scheduled nudges.
+    try:
+        await pills_agent.generate_all_agent_suggestion_pills(user_id, queries)
+    except Exception as exc:
+        logger.exception("daily_notification: suggestion pills generation failed", {
+            "user_id": user_id,
+            "error": str(exc),
         })
 
 

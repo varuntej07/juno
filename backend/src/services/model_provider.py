@@ -5,15 +5,15 @@ Usage:
     provider = ModelProvider()
 
     # Cheap + fast (Gemini Flash) — notification copy, classification, summaries
-    text = await provider.fast("Write a punchy notification about sardines")
+    text = await provider.cheap("Write a punchy notification about sardines")
 
     # Mid-tier (Claude Haiku) — tool-calling tasks, structured output with reasoning
     result = await provider.balanced("Classify this query", response_model=MyModel)
 
-    # Best reasoning (Claude Sonnet) — main chat, complex multi-turn
-    result = await provider.smart("...", tools=[...], history=[...])
+    # Full reasoning (Claude Sonnet) — main chat, complex multi-turn
+    result = await provider.expert("...", tools=[...], history=[...])
 
-Model IDs come from settings.TIER_FAST / TIER_BALANCED / TIER_SMART.
+Model IDs come from settings.TIER_CHEAP / TIER_BALANCED / TIER_EXPERT.
 To upgrade a tier: change ONE line in settings.py — zero call-site changes.
 
 Provider routing is inferred from the model ID prefix:
@@ -39,8 +39,9 @@ from ..lib.logger import logger
 T = TypeVar("T")
 
 _MAX_RETRIES = 3
-_BASE_DELAY_S = 1.0  # exponential backoff: 1s, 2s, 4s
-_TIMEOUT_S = 30.0    # per-call budget for background LLM work
+_BASE_DELAY_S = 1.0           # Anthropic backoff: 1s, 2s, 4s
+_GEMINI_BASE_DELAY_S = 5.0    # Gemini backoff: 5s, 10s, 20s — background tasks, 503s need time to clear
+_TIMEOUT_S = 30.0             # per-call budget for background LLM work
 
 # Anthropic exceptions that are worth retrying (transient / server-side)
 _ANTHROPIC_RETRYABLE = (
@@ -80,9 +81,9 @@ class ModelProvider:
     """
     Tier-based LLM interface. Three tiers, any number of underlying models.
 
-    fast() -> settings.TIER_FAST (currently gemini-2.5-flash)
+    cheap() -> settings.TIER_CHEAP (currently gemini-2.5-flash)
     balanced() -> settings.TIER_BALANCED (currently claude-haiku-4-5)
-    smart() -> settings.TIER_SMART (currently claude-sonnet-4-6)
+    expert() -> settings.TIER_EXPERT (currently claude-sonnet-4-6)
 
     When response_model (a Pydantic BaseModel subclass) is given, the raw LLM
     text is parsed as JSON into that model and returned as the typed instance.
@@ -93,7 +94,7 @@ class ModelProvider:
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._gemini_client: Any = None   # google.genai.Client, lazy
 
-    async def fast(
+    async def cheap(
         self,
         prompt: str,
         *,
@@ -102,11 +103,12 @@ class ModelProvider:
         temperature: float = 0.7,
     ) -> str | T:
         """Cheap and fast. Use for: notification copy, summaries, classification.
-        Currently routes to Gemini Flash via TIER_FAST setting."""
-        model_id = settings.TIER_FAST
-        logger.debug("ModelProvider.fast", {"model": model_id, "prompt_len": len(prompt)})
+        Currently routes to Gemini Flash via TIER_CHEAP setting."""
+        model_id = settings.TIER_CHEAP
+        logger.debug("ModelProvider.cheap", {"model": model_id, "prompt_len": len(prompt)})
         return await self._call(
             model_id=model_id,
+            fallback_model_id=settings.TIER_CHEAP_FALLBACK,
             prompt=prompt,
             system=system,
             response_model=response_model,
@@ -135,7 +137,7 @@ class ModelProvider:
             temperature=temperature,
         )
 
-    async def smart(
+    async def expert(
         self,
         prompt: str,
         *,
@@ -145,10 +147,10 @@ class ModelProvider:
         response_model: Type[T] | None = None,
         temperature: float = 0.7,
     ) -> str | T:
-        """Best reasoning. Use for: main chat, complex multi-turn, high-stakes output.
+        """Full reasoning. Use for: main chat, complex multi-turn, high-stakes output.
         Most expensive — only use where quality matters. Currently Claude Sonnet."""
-        model_id = settings.TIER_SMART
-        logger.debug("ModelProvider.smart", {"model": model_id, "prompt_len": len(prompt)})
+        model_id = settings.TIER_EXPERT
+        logger.debug("ModelProvider.expert", {"model": model_id, "prompt_len": len(prompt)})
         return await self._call(
             model_id=model_id,
             prompt=prompt,
@@ -163,6 +165,7 @@ class ModelProvider:
         self,
         *,
         model_id: str,
+        fallback_model_id: str | None = None,
         prompt: str,
         system: str | None,
         tools: list[dict] | None = None,
@@ -175,6 +178,7 @@ class ModelProvider:
         if provider == "gemini":
             raw = await self._call_gemini(
                 model_id=model_id,
+                fallback_model_id=fallback_model_id,
                 prompt=prompt,
                 system=system,
                 temperature=temperature,
@@ -203,6 +207,7 @@ class ModelProvider:
         self,
         *,
         model_id: str,
+        fallback_model_id: str | None = None,
         prompt: str,
         system: str | None,
         temperature: float,
@@ -239,6 +244,17 @@ class ModelProvider:
                 return await asyncio.wait_for(asyncio.to_thread(_sync), timeout=_TIMEOUT_S)
             except asyncio.TimeoutError:
                 if attempt == _MAX_RETRIES:
+                    if fallback_model_id:
+                        logger.warn("ModelProvider: Gemini primary timed out, switching to fallback", {
+                            "primary_model": model_id,
+                            "fallback_model": fallback_model_id,
+                        })
+                        return await self._call_gemini(
+                            model_id=fallback_model_id,
+                            prompt=prompt,
+                            system=system,
+                            temperature=temperature,
+                        )
                     logger.exception("ModelProvider: Gemini timeout after retries", {
                         "model": model_id,
                         "prompt_len": len(prompt),
@@ -246,7 +262,7 @@ class ModelProvider:
                         "timeout_s": _TIMEOUT_S,
                     })
                     raise
-                delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                delay = _GEMINI_BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 1.0)
                 logger.warn("ModelProvider: Gemini timeout, backing off", {
                     "model": model_id,
                     "attempt": attempt,
@@ -254,10 +270,31 @@ class ModelProvider:
                 })
                 await asyncio.sleep(delay)
             except Exception as exc:
-                # google-genai raises APIError subclasses with an HTTP `.code` attribute
+                # google-genai raises APIError subclasses with an HTTP `.code` attribute.
+                # When the SDK wraps a gRPC error, `.code` may be a gRPC StatusCode enum (e.g. UNAVAILABLE=14) rather than the integer 503,
+                # so also check the error string for known transient gRPC status names.
                 code = getattr(exc, "code", None)
-                retryable = code == 429 or (isinstance(code, int) and 500 <= code < 600)
+                error_str = str(exc).upper()
+                retryable = (
+                    code == 429
+                    or (isinstance(code, int) and 500 <= code < 600)
+                    or "UNAVAILABLE" in error_str
+                    or "RESOURCE_EXHAUSTED" in error_str
+                )
                 if not retryable or attempt == _MAX_RETRIES:
+                    if retryable and attempt == _MAX_RETRIES and fallback_model_id:
+                        logger.warn("ModelProvider: Gemini primary exhausted retries, switching to fallback", {
+                            "primary_model": model_id,
+                            "fallback_model": fallback_model_id,
+                            "error_type": type(exc).__name__,
+                            "code": code,
+                        })
+                        return await self._call_gemini(
+                            model_id=fallback_model_id,
+                            prompt=prompt,
+                            system=system,
+                            temperature=temperature,
+                        )
                     logger.exception("ModelProvider: Gemini call failed", {
                         "model": model_id,
                         "prompt_len": len(prompt),
@@ -267,7 +304,7 @@ class ModelProvider:
                         "error": str(exc),
                     })
                     raise
-                delay = _BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                delay = _GEMINI_BASE_DELAY_S * (2 ** (attempt - 1)) + random.uniform(0, 1.0)
                 logger.warn("ModelProvider: Gemini retryable error, backing off", {
                     "model": model_id,
                     "attempt": attempt,
@@ -280,7 +317,7 @@ class ModelProvider:
         # retry loop always returns or raises; this line is unreachable
         raise RuntimeError("ModelProvider: Gemini retry loop exited unexpectedly")
 
-    @traceable(name="anthropic_background_call", run_type="llm")
+    @traceable(name="anthropic_call", run_type="llm")
     async def _call_anthropic(
         self,
         *,
@@ -381,7 +418,7 @@ class ModelProvider:
     def _get_gemini_client(self) -> Any:
         if self._gemini_client is None:
             if not settings.GEMINI_API_KEY:
-                raise ValueError("GEMINI_API_KEY is not set — fast() tier unavailable")
+                raise ValueError("GEMINI_API_KEY is not set — cheap() tier unavailable")
             from google import genai  # type: ignore
             self._gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
         return self._gemini_client

@@ -16,7 +16,7 @@ Sound like a friend who was listening, not an app reporting analytics.
 Rules:
   - title: max 50 chars
   - body: max 100 chars — name the specific pattern
-  - initial_chat_message: 1-2 sentences, opens a real conversation about it
+  - opening_chat_message: 1-2 sentences, opens a real conversation about it
   - suggested_replies: 2-3 chips
   - No "I noticed that..." opener — just say the thing
   - Be wry, not preachy
@@ -25,7 +25,7 @@ Return ONLY valid JSON:
 {
   "title": "...",
   "body": "...",
-  "initial_chat_message": "...",
+  "opening_chat_message": "...",
   "suggested_replies": ["...", "...", "..."]
 }"""
 
@@ -59,7 +59,7 @@ class HabitNudgeAgent(BaseAgent):
 
 Be specific, wry, not preachy. Return JSON only."""
 
-        return await self._models.fast(
+        return await self._models.cheap(
             prompt,
             system=_SYSTEM_PROMPT,
             response_model=NotificationOutput,

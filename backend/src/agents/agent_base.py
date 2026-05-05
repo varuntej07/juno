@@ -21,14 +21,14 @@ class ScheduledAgent(ABC):
     Abstract base for all scheduled domain agents.
 
     Subclasses implement:
-      - fetch_data(user_config)      → raw content items
-      - build_notification(...)      → title + body + chat_opener
-      - agent_id property            → unique string identifier
+      - fetch_data(user_config)      -> raw content items
+      - build_notification(...)      -> title + body + opening_chat_message
+      - agent_id property            -> unique string identifier
 
     The base provides:
-      - load_user_config()           → Firestore agent_config/{agent_id}
-      - load_recent_feedback()       → last N interactions from agent_memory
-      - save_interaction()           → write interaction after user reply
+      - load_user_config()           -> Firestore agent_config/{agent_id}
+      - load_interaction_history()       -> last N interactions from agent_memory
+      - save_interaction()           -> write interaction after user reply
     """
 
     @property
@@ -45,11 +45,11 @@ class ScheduledAgent(ABC):
         self,
         content: list[dict[str, Any]],
         user_config: dict[str, Any],
-        recent_feedback: list[dict[str, Any]],
+        interaction_history: list[dict[str, Any]],
     ) -> dict[str, str]:
         """
         Call the LLM to produce a push notification.
-        Must return: {"title": str, "body": str, "chat_opener": str}
+        Must return: {"title": str, "body": str, "opening_chat_message": str}
         """
         ...
 
@@ -91,7 +91,7 @@ class ScheduledAgent(ABC):
         config.setdefault("enabled", True)
         return config
 
-    async def load_recent_feedback(
+    async def load_interaction_history(
         self, user_id: str, limit: int = 20
     ) -> list[dict[str, Any]]:
         import asyncio

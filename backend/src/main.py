@@ -363,7 +363,7 @@ def _check_env() -> None:
     """Log the status of every critical env var so you can spot missing config instantly."""
     checks = {
         "ANTHROPIC_API_KEY": bool(settings.ANTHROPIC_API_KEY),
-        "ANTHROPIC_MODEL": settings.ANTHROPIC_MODEL,
+        "ANTHROPIC_CHAT_MODEL": settings.ANTHROPIC_CHAT_MODEL,
         "LIVEKIT_URL": bool(settings.LIVEKIT_URL),
         "LIVEKIT_API_KEY": bool(settings.LIVEKIT_API_KEY),
         "LIVEKIT_CONFIGURED": settings.livekit_configured,

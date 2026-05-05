@@ -193,9 +193,17 @@ class GeminiClient:
                 )
                 return response.text or ""
             except Exception as exc:
-                # google-genai raises APIError subclasses with an HTTP `.code` attribute
+                # google-genai raises APIError subclasses with an HTTP `.code` attribute.
+                # When the SDK wraps a gRPC error, `.code` may be a gRPC StatusCode enum (e.g. UNAVAILABLE=14) rather than the integer 503, 
+                # so also check the error string for known transient gRPC status names.
                 code = getattr(exc, "code", None)
-                retryable = code == 429 or (isinstance(code, int) and 500 <= code < 600)
+                error_str = str(exc).upper()
+                retryable = (
+                    code == 429
+                    or (isinstance(code, int) and 500 <= code < 600)
+                    or "UNAVAILABLE" in error_str
+                    or "RESOURCE_EXHAUSTED" in error_str
+                )
                 if not retryable or attempt == _MAX_RETRIES:
                     logger.error("Gemini call failed", {
                         "model": settings.GEMINI_MODEL,

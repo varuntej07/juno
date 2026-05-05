@@ -270,7 +270,7 @@ async def entrypoint(ctx: JobContext) -> None:
         )
 
         llm_pipeline = lk_llm.FallbackAdapter([
-            anthropic.LLM(model=settings.ANTHROPIC_MODEL, api_key=settings.ANTHROPIC_API_KEY),
+            anthropic.LLM(model=settings.ANTHROPIC_CHAT_MODEL, api_key=settings.ANTHROPIC_API_KEY),
             anthropic.LLM(model=settings.TIER_BALANCED, api_key=settings.ANTHROPIC_API_KEY),
         ])
 
