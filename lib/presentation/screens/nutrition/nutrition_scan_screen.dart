@@ -17,16 +17,29 @@ class NutritionScanScreen extends StatefulWidget {
   State<NutritionScanScreen> createState() => _NutritionScanScreenState();
 }
 
-class _NutritionScanScreenState extends State<NutritionScanScreen> {
+class _NutritionScanScreenState extends State<NutritionScanScreen>
+    with WidgetsBindingObserver {
   final _picker = ImagePicker();
   File? _pickedImage;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NutritionScanViewModel>().reset();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    context.read<NutritionScanViewModel>().onAppLifecycleChanged(state);
   }
 
   Future<void> _openCamera() async {
@@ -92,15 +105,9 @@ class _NutritionScanScreenState extends State<NutritionScanScreen> {
                 onGallery: _pickGallery,
                 onScan: _pickedImage != null ? _scan : null,
               ),
-            NutritionScanState.scanning => const _LoadingView(
-                message: 'Analyzing image…',
-              ),
-            NutritionScanState.questioning => _QuestionView(
-                vm: vm,
-              ),
-            NutritionScanState.analyzing => const _LoadingView(
-                message: 'Calculating your verdict…',
-              ),
+            NutritionScanState.scanning => _LoadingView(phrase: vm.currentLoadingPhrase),
+            NutritionScanState.questioning => _QuestionView(vm: vm),
+            NutritionScanState.analyzing => _LoadingView(phrase: vm.currentLoadingPhrase),
             NutritionScanState.result => _ResultView(
                 analysis: vm.analysis!,
                 onReset: () {
@@ -159,19 +166,12 @@ class _IdleView extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.camera_alt_rounded,
-                            color: AppColors.textTertiary,
-                            size: 64,
-                          ),
+                          Icon(Icons.camera_alt_rounded, color: AppColors.textTertiary, size: 64),
                           SizedBox(height: 16),
                           Text(
                             'Take a photo of a nutrition label\nor a restaurant dish',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 15,
-                            ),
+                            style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
                           ),
                         ],
                       ),
@@ -216,14 +216,9 @@ class _IdleView extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: onScan != null ? AppColors.accent : AppColors.surface,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
-              child: const Text(
-                'Scan',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
+              child: const Text('Scan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
           ),
         ],
@@ -232,12 +227,12 @@ class _IdleView extends StatelessWidget {
   }
 }
 
-// ─── Loading spinner ──────────────────────────────────────────────────────────
+// ─── Loading: animated rotating phrases ──────────────────────────────────────
 
 class _LoadingView extends StatelessWidget {
-  final String message;
+  final String phrase;
 
-  const _LoadingView({required this.message});
+  const _LoadingView({required this.phrase});
 
   @override
   Widget build(BuildContext context) {
@@ -245,11 +240,33 @@ class _LoadingView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(color: AppColors.accent),
-          const SizedBox(height: 20),
-          Text(
-            message,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 15),
+          const SizedBox(
+            width: 44,
+            height: 44,
+            child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2.5),
+          ),
+          const SizedBox(height: 36),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.08),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+                  child: child,
+                ),
+              ),
+              child: Text(
+                phrase,
+                key: ValueKey(phrase),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 15, height: 1.5),
+              ),
+            ),
           ),
         ],
       ),
@@ -261,7 +278,6 @@ class _LoadingView extends StatelessWidget {
 
 class _QuestionView extends StatefulWidget {
   final NutritionScanViewModel vm;
-
   const _QuestionView({required this.vm});
 
   @override
@@ -307,7 +323,6 @@ class _QuestionViewState extends State<_QuestionView>
   void _submit() {
     final q = widget.vm.currentQuestion;
     if (q == null) return;
-
     dynamic value;
     switch (q.inputType) {
       case 'select':
@@ -331,6 +346,22 @@ class _QuestionViewState extends State<_QuestionView>
     setState(() => _resetInputs());
   }
 
+  void _autoAdvance(dynamic value) {
+    setState(() {
+      if (value is bool) {
+        _boolAnswer = value;
+      } else {
+        _selectedOption = value as String;
+      }
+    });
+    Future.delayed(const Duration(milliseconds: 280), () {
+      if (mounted) {
+        widget.vm.answerCurrent(value);
+        setState(() => _resetInputs());
+      }
+    });
+  }
+
   @override
   void dispose() {
     _anim.dispose();
@@ -345,12 +376,13 @@ class _QuestionViewState extends State<_QuestionView>
     final q = vm.currentQuestion;
     if (q == null) return const SizedBox.shrink();
 
+    final isAutoAdvanceType = q.inputType == 'select' || q.inputType == 'boolean';
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Progress bar
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
@@ -366,8 +398,6 @@ class _QuestionViewState extends State<_QuestionView>
             style: const TextStyle(color: AppColors.textTertiary, fontSize: 12),
           ),
           const SizedBox(height: 32),
-
-          // Animated question card
           FadeTransition(
             opacity: _fade,
             child: SlideTransition(
@@ -390,35 +420,30 @@ class _QuestionViewState extends State<_QuestionView>
               ),
             ),
           ),
-
           const Spacer(),
-
           Row(
             children: [
               TextButton(
                 onPressed: vm.skipCurrent,
-                child: const Text(
-                  'Skip',
-                  style: TextStyle(color: AppColors.textTertiary),
-                ),
+                child: const Text('Skip', style: TextStyle(color: AppColors.textTertiary)),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: _submit,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+              if (!isAutoAdvanceType) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      vm.hasMoreQuestions ? 'Next' : 'Get Result',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ),
-                  child: Text(
-                    vm.hasMoreQuestions ? 'Next' : 'Get Result',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
@@ -431,7 +456,7 @@ class _QuestionViewState extends State<_QuestionView>
       'select' => _SelectInput(
           options: q.options,
           selected: _selectedOption,
-          onSelect: (v) => setState(() => _selectedOption = v),
+          onSelect: _autoAdvance,
         ),
       'number' => TextField(
           controller: _numberController,
@@ -454,17 +479,9 @@ class _QuestionViewState extends State<_QuestionView>
         ),
       'boolean' => Row(
           children: [
-            _BoolChip(
-              label: 'Yes',
-              selected: _boolAnswer == true,
-              onTap: () => setState(() => _boolAnswer = true),
-            ),
+            _BoolChip(label: 'Yes', selected: _boolAnswer == true, onTap: () => _autoAdvance(true)),
             const SizedBox(width: 12),
-            _BoolChip(
-              label: 'No',
-              selected: _boolAnswer == false,
-              onTap: () => setState(() => _boolAnswer = false),
-            ),
+            _BoolChip(label: 'No', selected: _boolAnswer == false, onTap: () => _autoAdvance(false)),
           ],
         ),
       _ => TextField(
@@ -494,42 +511,32 @@ class _SelectInput extends StatelessWidget {
   final String? selected;
   final void Function(String) onSelect;
 
-  const _SelectInput({
-    required this.options,
-    required this.selected,
-    required this.onSelect,
-  });
+  const _SelectInput({required this.options, required this.selected, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
       spacing: 10,
       runSpacing: 10,
-      children: options
-          .map(
-            (opt) => GestureDetector(
-              onTap: () => onSelect(opt),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                decoration: BoxDecoration(
-                  color: selected == opt ? AppColors.accent : AppColors.surface,
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(
-                    color: selected == opt ? AppColors.accent : AppColors.border,
-                  ),
-                ),
-                child: Text(
-                  opt,
-                  style: TextStyle(
-                    color: selected == opt ? Colors.white : AppColors.textPrimary,
-                    fontWeight: selected == opt ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-              ),
+      children: options.map((opt) => GestureDetector(
+        onTap: () => onSelect(opt),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected == opt ? AppColors.accent : AppColors.surface,
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: selected == opt ? AppColors.accent : AppColors.border),
+          ),
+          child: Text(
+            opt,
+            style: TextStyle(
+              color: selected == opt ? Colors.white : AppColors.textPrimary,
+              fontWeight: selected == opt ? FontWeight.w600 : FontWeight.normal,
             ),
-          )
-          .toList(),
+          ),
+        ),
+      )).toList(),
     );
   }
 }
@@ -565,130 +572,509 @@ class _BoolChip extends StatelessWidget {
   }
 }
 
-// ─── Result card ──────────────────────────────────────────────────────────────
+// ─── Result: staggered animated redesign ─────────────────────────────────────
 
-class _ResultView extends StatelessWidget {
+class _ResultView extends StatefulWidget {
   final NutritionAnalysisModel analysis;
   final VoidCallback onReset;
 
   const _ResultView({required this.analysis, required this.onReset});
 
-  Color get _verdictColor {
-    return switch (analysis.recommendation) {
-      'eat' => AppColors.success,
-      'skip' => AppColors.error,
-      _ => AppColors.warning,
-    };
+  @override
+  State<_ResultView> createState() => _ResultViewState();
+}
+
+class _ResultViewState extends State<_ResultView> with TickerProviderStateMixin {
+  late AnimationController _controller;
+
+  // Each section gets its own interval on the shared controller.
+  late Animation<double> _headerFade;
+  late Animation<Offset> _headerSlide;
+  late Animation<double> _verdictScale;
+  late Animation<double> _buddyFade;
+  late Animation<Offset> _buddySlide;
+  late Animation<double> _nutrientsFade;
+  late Animation<Offset> _nutrientsSlide;
+  late Animation<double> _prosFade;
+  late Animation<Offset> _prosSlide;
+  late Animation<double> _consFade;
+  late Animation<Offset> _consSlide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+
+    _headerFade = _buildFade(0.0, 0.22);
+    _headerSlide = _buildSlide(0.0, 0.22);
+    _verdictScale = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.15, 0.38, curve: Curves.elasticOut),
+    );
+    _buddyFade = _buildFade(0.28, 0.50);
+    _buddySlide = _buildSlide(0.28, 0.50);
+    _nutrientsFade = _buildFade(0.44, 0.65);
+    _nutrientsSlide = _buildSlide(0.44, 0.65);
+    _prosFade = _buildFade(0.60, 0.80);
+    _prosSlide = _buildSlide(0.60, 0.80, direction: const Offset(-0.15, 0));
+    _consFade = _buildFade(0.68, 0.88);
+    _consSlide = _buildSlide(0.68, 0.88, direction: const Offset(0.15, 0));
+
+    _controller.forward();
   }
 
-  String get _verdictLabel {
-    return switch (analysis.recommendation) {
-      'eat' => 'EAT ✓',
-      'skip' => 'SKIP ✗',
-      _ => 'MODERATE ⚡',
-    };
+  Animation<double> _buildFade(double start, double end) => CurvedAnimation(
+        parent: _controller,
+        curve: Interval(start, end, curve: Curves.easeOut),
+      );
+
+  Animation<Offset> _buildSlide(
+    double start,
+    double end, {
+    Offset direction = const Offset(0, 0.12),
+  }) =>
+      Tween<Offset>(begin: direction, end: Offset.zero).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: Interval(start, end, curve: Curves.easeOut),
+        ),
+      );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
+
+  Color get _verdictColor => switch (widget.analysis.recommendation) {
+        'eat' => AppColors.success,
+        'skip' => AppColors.error,
+        _ => AppColors.warning,
+      };
+
+  String get _verdictLabel => switch (widget.analysis.recommendation) {
+        'eat' => 'EAT',
+        'skip' => 'SKIP',
+        _ => 'MODERATE',
+      };
 
   @override
   Widget build(BuildContext context) {
+    final a = widget.analysis;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Verdict badge
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            decoration: BoxDecoration(
-              color: _verdictColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _verdictColor.withValues(alpha: 0.4)),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  _verdictLabel,
-                  style: TextStyle(
-                    color: _verdictColor,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1,
+          // ── Header: food name + headline + verdict pill ──────────────────
+          FadeTransition(
+            opacity: _headerFade,
+            child: SlideTransition(
+              position: _headerSlide,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          a.foodName,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
+                          ),
+                        ),
+                        if (a.headline.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '"${a.headline}"',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 14,
+                              fontStyle: FontStyle.italic,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  analysis.foodName,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Reason
-          Text(
-            analysis.verdictReason,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 15,
-              height: 1.6,
-            ),
-          ),
-
-          if (analysis.concerns.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: analysis.concerns
-                  .map(
-                    (c) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  const SizedBox(width: 12),
+                  // Verdict pill with scale bounce
+                  ScaleTransition(
+                    scale: _verdictScale,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                       decoration: BoxDecoration(
-                        color: AppColors.warning.withValues(alpha: 0.12),
+                        color: _verdictColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+                        border: Border.all(color: _verdictColor.withValues(alpha: 0.5)),
                       ),
                       child: Text(
-                        c,
-                        style: const TextStyle(color: AppColors.warning, fontSize: 13),
+                        _verdictLabel,
+                        style: TextStyle(
+                          color: _verdictColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                        ),
                       ),
                     ),
-                  )
-                  .toList(),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // Macros table
-          _MacroTable(macros: analysis.macros),
+          // ── Buddy's take ──────────────────────────────────────────────────
+          FadeTransition(
+            opacity: _buddyFade,
+            child: SlideTransition(
+              position: _buddySlide,
+              child: _BuddyTakeCard(
+                verdictReason: a.verdictReason,
+                accentColor: _verdictColor,
+              ),
+            ),
+          ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 20),
+
+          // ── Key nutrients ──────────────────────────────────────────────────
+          if (a.keyNutrients.isNotEmpty)
+            FadeTransition(
+              opacity: _nutrientsFade,
+              child: SlideTransition(
+                position: _nutrientsSlide,
+                child: _KeyNutrientsRow(nutrients: a.keyNutrients),
+              ),
+            ),
+
+          if (a.keyNutrients.isNotEmpty) const SizedBox(height: 20),
+
+          // ── Pros ──────────────────────────────────────────────────────────
+          if (a.pros.isNotEmpty)
+            FadeTransition(
+              opacity: _prosFade,
+              child: SlideTransition(
+                position: _prosSlide,
+                child: _ProsConsSection(
+                  label: 'What works for you',
+                  items: a.pros,
+                  accentColor: AppColors.success,
+                  bulletChar: '↑',
+                ),
+              ),
+            ),
+
+          if (a.pros.isNotEmpty) const SizedBox(height: 12),
+
+          // ── Cons ──────────────────────────────────────────────────────────
+          if (a.cons.isNotEmpty)
+            FadeTransition(
+              opacity: _consFade,
+              child: SlideTransition(
+                position: _consSlide,
+                child: _ProsConsSection(
+                  label: 'Keep in mind',
+                  items: a.cons,
+                  accentColor: AppColors.warning,
+                  bulletChar: '↓',
+                ),
+              ),
+            ),
+
+          if (a.cons.isNotEmpty) const SizedBox(height: 20),
+
+          // ── All the numbers (collapsible) ─────────────────────────────────
+          _FullMacrosCollapsible(macros: a.macros),
+
+          const SizedBox(height: 28),
 
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: onReset,
+              onPressed: widget.onReset,
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.textPrimary,
                 side: const BorderSide(color: AppColors.border),
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               child: const Text('Scan Another'),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Buddy's take card ────────────────────────────────────────────────────────
+
+class _BuddyTakeCard extends StatelessWidget {
+  final String verdictReason;
+  final Color accentColor;
+
+  const _BuddyTakeCard({required this.verdictReason, required this.accentColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border(left: BorderSide(color: accentColor, width: 3)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Buddy\'s take',
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            verdictReason,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Key nutrients row ────────────────────────────────────────────────────────
+
+class _KeyNutrientsRow extends StatelessWidget {
+  final List<KeyNutrient> nutrients;
+
+  const _KeyNutrientsRow({required this.nutrients});
+
+  Color _sentimentColor(String sentiment) => switch (sentiment) {
+        'good' => AppColors.success,
+        'watch' => AppColors.warning,
+        _ => AppColors.textTertiary,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 100,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: nutrients.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => _NutrientCard(
+          nutrient: nutrients[i],
+          accentColor: _sentimentColor(nutrients[i].sentiment),
+        ),
+      ),
+    );
+  }
+}
+
+class _NutrientCard extends StatelessWidget {
+  final KeyNutrient nutrient;
+  final Color accentColor;
+
+  const _NutrientCard({required this.nutrient, required this.accentColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 120,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            nutrient.name.toUpperCase(),
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+          Text(
+            nutrient.value,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Text(
+            nutrient.context,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 11,
+              height: 1.3,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Pros / Cons section ──────────────────────────────────────────────────────
+
+class _ProsConsSection extends StatelessWidget {
+  final String label;
+  final List<String> items;
+  final Color accentColor;
+  final String bulletChar;
+
+  const _ProsConsSection({
+    required this.label,
+    required this.items,
+    required this.accentColor,
+    required this.bulletChar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      bulletChar,
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── All the numbers (collapsible macro table) ────────────────────────────────
+
+class _FullMacrosCollapsible extends StatefulWidget {
+  final Map<String, double> macros;
+
+  const _FullMacrosCollapsible({required this.macros});
+
+  @override
+  State<_FullMacrosCollapsible> createState() => _FullMacrosCollapsibleState();
+}
+
+class _FullMacrosCollapsibleState extends State<_FullMacrosCollapsible> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => setState(() => _expanded = !_expanded),
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Text(
+                  'All the numbers',
+                  style: const TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 250),
+                  child: const Icon(Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.textTertiary, size: 18),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: _MacroTable(macros: widget.macros),
+          ),
+          crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 250),
+        ),
+      ],
     );
   }
 }
@@ -713,29 +1099,25 @@ class _MacroTable extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: rows.asMap().entries.map((e) {
           final isLast = e.key == rows.length - 1;
           return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              border: isLast
-                  ? null
-                  : const Border(bottom: BorderSide(color: AppColors.divider)),
+              border: isLast ? null : const Border(bottom: BorderSide(color: AppColors.divider)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(e.value.$1,
-                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                 Text(e.value.$2,
                     style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600)),
+                        color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
               ],
             ),
           );
@@ -817,23 +1199,14 @@ class _ProfileSheet extends StatelessWidget {
         children: [
           const Text(
             'Your Dietary Profile',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 16),
-          if (p.goal != null)
-            _ProfileRow('Goal', p.goal!),
-          if (p.activityLevel != null)
-            _ProfileRow('Activity', p.activityLevel!),
-          if (p.restrictions.isNotEmpty)
-            _ProfileRow('Diet', p.restrictions.join(', ')),
-          if (p.allergies.isNotEmpty)
-            _ProfileRow('Allergies', p.allergies.join(', ')),
-          if (p.weightKg != null)
-            _ProfileRow('Weight', '${p.weightKg!.toStringAsFixed(1)} kg'),
+          if (p.goal != null) _ProfileRow('Goal', p.goal!),
+          if (p.activityLevel != null) _ProfileRow('Activity', p.activityLevel!),
+          if (p.restrictions.isNotEmpty) _ProfileRow('Diet', p.restrictions.join(', ')),
+          if (p.allergies.isNotEmpty) _ProfileRow('Allergies', p.allergies.join(', ')),
+          if (p.weightKg != null) _ProfileRow('Weight', '${p.weightKg!.toStringAsFixed(1)} kg'),
         ],
       ),
     );
@@ -854,12 +1227,10 @@ class _ProfileRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 80,
-            child: Text(label,
-                style: const TextStyle(color: AppColors.textTertiary, fontSize: 13)),
+            child: Text(label, style: const TextStyle(color: AppColors.textTertiary, fontSize: 13)),
           ),
           Expanded(
-            child: Text(value,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+            child: Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13)),
           ),
         ],
       ),

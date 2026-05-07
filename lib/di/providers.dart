@@ -138,7 +138,10 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
       create: (_) => ConnectorsViewModel(connectorService: googleCalendarConnectorService),
       ),
     ChangeNotifierProvider<NutritionScanViewModel>(
-      create: (_) => NutritionScanViewModel(service: nutritionScanService),
+      create: (_) => NutritionScanViewModel(
+        service: nutritionScanService,
+        notificationService: notificationService,
+      ),
     ),
     ChangeNotifierProvider<DietaryProfileViewModel>(
       create: (_) => DietaryProfileViewModel(service: nutritionScanService, prefs: prefs),

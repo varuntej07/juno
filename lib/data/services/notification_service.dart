@@ -7,6 +7,11 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../core/logging/app_logger.dart';
 import '../../core/network/api_client.dart';
 
+/// Payload emitted when the user taps a nutrition scan-ready local notification.
+class NutritionScanReadyTapPayload {
+  const NutritionScanReadyTapPayload();
+}
+
 /// Payload emitted when the user taps an engagement notification.
 class EngagementTapPayload {
   final String engagementId;
@@ -38,6 +43,10 @@ const _tag = 'NotificationService';
 const _kAndroidChannelId = 'aura_default';
 const _kAndroidChannelName = 'Aura Notifications';
 
+/// Stable notification ID for nutrition scan local notifications.
+/// Must not collide with other local notification IDs (none exist currently).
+const _kNutritionScanNotificationId = 200;
+
 /// Centralized FCM notification service.
 ///
 /// Call [initialize] once after the user authenticates.  It:
@@ -68,6 +77,8 @@ class NotificationService {
       StreamController<EngagementTapPayload>.broadcast();
   final _agentNudgeTapController =
       StreamController<AgentNudgeTapPayload>.broadcast();
+  final _nutritionScanReadyTapController =
+      StreamController<NutritionScanReadyTapPayload>.broadcast();
 
   /// Emits when the user taps an engagement notification.
   Stream<EngagementTapPayload> get engagementTapStream =>
@@ -76,6 +87,10 @@ class NotificationService {
   /// Emits when the user taps a scheduled agent nudge notification.
   Stream<AgentNudgeTapPayload> get agentNudgeTapStream =>
       _agentNudgeTapController.stream;
+
+  /// Emits when the user taps the nutrition scan-ready local notification.
+  Stream<NutritionScanReadyTapPayload> get nutritionScanReadyTapStream =>
+      _nutritionScanReadyTapController.stream;
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -121,7 +136,8 @@ class NotificationService {
       },
     );
 
-    // ── 2. Create Android notification channel ───────────────────────────
+    // ── 2. Initialize local notifications plugin + create Android channel ──
+    await _initializeLocalNotificationsPlugin();
     await _createAndroidChannel();
 
     // ── 3. Get current token and register with backend ───────────────────
@@ -172,9 +188,73 @@ class NotificationService {
     _initialized = false;
     await _engagementTapController.close();
     await _agentNudgeTapController.close();
+    await _nutritionScanReadyTapController.close();
+  }
+
+  // ── Public local notification API ─────────────────────────────────────────
+
+  /// Show an immediate local system notification for nutrition scan results.
+  ///
+  /// Used when the user has backgrounded the app during a scan and the result
+  /// arrives or the Q&A is awaiting their input.
+  Future<void> showNutritionScanLocalNotification({
+    required String title,
+    required String body,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      _kAndroidChannelId,
+      _kAndroidChannelName,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      icon: '@drawable/ic_notification',
+    );
+    const iosDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+
+    try {
+      await _localNotificationsPlugin.show(
+        id: _kNutritionScanNotificationId,
+        title: title,
+        body: body,
+        notificationDetails: details,
+        payload: 'nutrition_scan_ready',
+      );
+    } catch (e) {
+      AppLogger.error(
+        'Failed to show nutrition scan local notification',
+        error: e,
+        tag: _tag,
+      );
+    }
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  Future<void> _initializeLocalNotificationsPlugin() async {
+    const initSettingsAndroid = AndroidInitializationSettings('@drawable/ic_notification');
+    const initSettingsIOS = DarwinInitializationSettings();
+    const initSettings = InitializationSettings(
+      android: initSettingsAndroid,
+      iOS: initSettingsIOS,
+    );
+
+    await _localNotificationsPlugin.initialize(
+      settings: initSettings,
+      onDidReceiveNotificationResponse: _handleLocalNotificationTap,
+    );
+
+    AppLogger.debug(
+      'Local notifications plugin initialized',
+      tag: _tag,
+    );
+  }
+
+  void _handleLocalNotificationTap(NotificationResponse response) {
+    if (response.payload == 'nutrition_scan_ready') {
+      _nutritionScanReadyTapController.add(const NutritionScanReadyTapPayload());
+    }
+  }
 
   Future<void> _registerToken(String token) async {
     final uid = _userId;

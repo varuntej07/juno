@@ -87,6 +87,7 @@ async def handle_nutrition_scan_request(event: dict[str, Any]) -> dict[str, Any]
             "scan_id": result.scan_id,
             "detected_type": result.detected_type,
             "detected_items": result.detected_items,
+            "food_category": result.food_category,
             "confidence": result.confidence,
             "needs_clarification": result.needs_clarification,
             "clarifying_questions": [
@@ -146,14 +147,19 @@ async def handle_nutrition_analyze_request(event: dict[str, Any]) -> dict[str, A
             "scan_id": scan_id,
             "detected_type": scan_result.detected_type,
             "detected_items": scan_result.detected_items,
+            "food_category": scan_result.food_category,
             "confidence": scan_result.confidence,
             "questions_asked": [{"id": q.id, "text": q.text} for q in scan_result.clarifying_questions],
             "user_answers": user_answers,
             "food_name": analysis.food_name,
+            "headline": analysis.headline,
             "macros": analysis.macros,
+            "key_nutrients": analysis.key_nutrients,
             "recommendation": analysis.recommendation,
             "verdict_reason": analysis.verdict_reason,
             "concerns": analysis.concerns,
+            "pros": analysis.pros,
+            "cons": analysis.cons,
             "occasion": user_answers.get("occasion"),
             "is_cheat_meal": bool(user_answers.get("is_cheat_meal", False)),
             "created_at": now_iso,
@@ -196,10 +202,14 @@ async def handle_nutrition_analyze_request(event: dict[str, Any]) -> dict[str, A
         return _json(200, {
             "nutrition_log_id": log_id,
             "food_name": analysis.food_name,
+            "headline": analysis.headline,
             "macros": analysis.macros,
+            "key_nutrients": analysis.key_nutrients,
             "recommendation": analysis.recommendation,
             "verdict_reason": analysis.verdict_reason,
             "concerns": analysis.concerns,
+            "pros": analysis.pros,
+            "cons": analysis.cons,
         })
 
     except Exception as exc:

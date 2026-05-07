@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # Gemini API (nutrition VLM)
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Pro is used exclusively for nutrition scan + analyze;
+    # All background / cost-tolerant tasks stay on Flash via TIER_CHEAP.
+    GEMINI_NUTRITION_MODEL: str = "gemini-2.5-pro"
     NUTRITION_SCAN_CONFIDENCE_THRESHOLD: float = 0.85
 
     # Model tiers

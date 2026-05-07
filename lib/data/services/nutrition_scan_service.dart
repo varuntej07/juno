@@ -50,6 +50,7 @@ class NutritionScanService {
       '/nutrition/analyze',
       {'scan_id': scanId, 'user_answers': userAnswers},
       NutritionAnalysisModel.fromMap,
+      timeout: AppConstants.nutritionScanTimeout,
     );
   }
 

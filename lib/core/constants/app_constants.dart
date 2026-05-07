@@ -8,8 +8,8 @@ class AppConstants {
   static const chatRequestTimeout = Duration(seconds: 45);
   static const chatStreamConnectTimeout = Duration(seconds: 10);
   static const chatStreamIdleTimeout = Duration(seconds: 60);
-  // Nutrition scan invokes Vertex AI Gemini VLM — allow extra time for vision inference.
-  static const nutritionScanTimeout = Duration(seconds: 45);
+  // Nutrition scan uses Gemini Pro, now this larger model needs extra inference headroom.
+  static const nutritionScanTimeout = Duration(seconds: 120);
   static const apiWriteTimeout = Duration(seconds: 30);
   static const webSocketPingInterval = Duration(seconds: 15);
   static const webSocketReconnectDelay = Duration(seconds: 3);
