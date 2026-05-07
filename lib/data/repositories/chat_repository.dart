@@ -39,6 +39,40 @@ class ChatRepository {
     }
   }
 
+  /// Returns the most recent session for the given agentId (null = main chat).
+  /// Returns null if no session exists yet.
+  Future<ChatSession?> getMostRecentSessionForAgent(String? agentId) async {
+    final query = _db.select(_db.chatSessions);
+    if (agentId == null) {
+      query.where((t) => t.agentId.isNull());
+    } else {
+      query.where((t) => t.agentId.equals(agentId));
+    }
+    query
+      ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
+      ..limit(1);
+    return query.getSingleOrNull();
+  }
+
+  /// Returns all sessions for the given agentId (null = main chat), newest first.
+  Future<Result<List<ChatSession>>> getSessionsForAgent(String? agentId) async {
+    try {
+      final query = _db.select(_db.chatSessions);
+      if (agentId == null) {
+        query.where((t) => t.agentId.isNull());
+      } else {
+        query.where((t) => t.agentId.equals(agentId));
+      }
+      query.orderBy([(t) => OrderingTerm.desc(t.updatedAt)]);
+      final rows = await query.get();
+      return Result.success(rows);
+    } catch (e, st) {
+      return Result.failure(
+        AppException.unexpected('Failed to load sessions', error: e, stackTrace: st),
+      );
+    }
+  }
+
   /// Returns the single persistent session for an agent, creating it if absent.
   Future<String> getOrCreateAgentSession(String agentId) async {
     final existing = await (_db.select(_db.chatSessions)

@@ -42,42 +42,6 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyDrA4TpUuZpIcLq9vkuU_V89dGWmzROznM',
-    appId: '1:620715294422:web:e2d33124aa0767366e1377',
-    messagingSenderId: '620715294422',
-    projectId: 'juno-2ea45',
-    authDomain: 'juno-2ea45.firebaseapp.com',
-    storageBucket: 'juno-2ea45.firebasestorage.app',
-    measurementId: 'G-LLC392ZGP2',
-  );
-
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAIn-cvYUzHknoGVjs-BytxsdpARa4nNu8',
-    appId: '1:620715294422:android:83b9c144a2afc9fd6e1377',
-    messagingSenderId: '620715294422',
-    projectId: 'juno-2ea45',
-    storageBucket: 'juno-2ea45.firebasestorage.app',
-  );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBufZ9tH_xygLbDSGzmWbC9rlZAZNOH9vE',
-    appId: '1:620715294422:ios:51650fe41356f86d6e1377',
-    messagingSenderId: '620715294422',
-    projectId: 'juno-2ea45',
-    storageBucket: 'juno-2ea45.firebasestorage.app',
-    iosBundleId: 'com.juno.aura',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBufZ9tH_xygLbDSGzmWbC9rlZAZNOH9vE',
-    appId: '1:620715294422:ios:51650fe41356f86d6e1377',
-    messagingSenderId: '620715294422',
-    projectId: 'juno-2ea45',
-    storageBucket: 'juno-2ea45.firebasestorage.app',
-    iosBundleId: 'com.juno.aura',
-  );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDrA4TpUuZpIcLq9vkuU_V89dGWmzROznM',
     appId: '1:620715294422:web:1d9ffe748f4496db6e1377',
     messagingSenderId: '620715294422',
     projectId: 'juno-2ea45',
@@ -85,4 +49,45 @@ class DefaultFirebaseOptions {
     storageBucket: 'juno-2ea45.firebasestorage.app',
     measurementId: 'G-574X7P0GG9',
   );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyAIn-cvYUzHknoGVjs-BytxsdpARa4nNu8',
+    appId: '1:620715294422:android:f2c781251402bbd16e1377',
+    messagingSenderId: '620715294422',
+    projectId: 'juno-2ea45',
+    storageBucket: 'juno-2ea45.firebasestorage.app',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyBufZ9tH_xygLbDSGzmWbC9rlZAZNOH9vE',
+    appId: '1:620715294422:ios:0be8c53452ad36376e1377',
+    messagingSenderId: '620715294422',
+    projectId: 'juno-2ea45',
+    storageBucket: 'juno-2ea45.firebasestorage.app',
+    androidClientId: '620715294422-hbaqdmqiji1b2trn80rh22dvsjfniuf5.apps.googleusercontent.com',
+    iosClientId: '620715294422-8eardf337q20amjabr9ht8c762g2too5.apps.googleusercontent.com',
+    iosBundleId: 'com.varundevs.aura',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyBufZ9tH_xygLbDSGzmWbC9rlZAZNOH9vE',
+    appId: '1:620715294422:ios:0be8c53452ad36376e1377',
+    messagingSenderId: '620715294422',
+    projectId: 'juno-2ea45',
+    storageBucket: 'juno-2ea45.firebasestorage.app',
+    androidClientId: '620715294422-hbaqdmqiji1b2trn80rh22dvsjfniuf5.apps.googleusercontent.com',
+    iosClientId: '620715294422-8eardf337q20amjabr9ht8c762g2too5.apps.googleusercontent.com',
+    iosBundleId: 'com.varundevs.aura',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyDrA4TpUuZpIcLq9vkuU_V89dGWmzROznM',
+    appId: '1:620715294422:web:9c82666ee2dfe6986e1377',
+    messagingSenderId: '620715294422',
+    projectId: 'juno-2ea45',
+    authDomain: 'juno-2ea45.firebaseapp.com',
+    storageBucket: 'juno-2ea45.firebasestorage.app',
+    measurementId: 'G-36N6LM52NS',
+  );
+
 }

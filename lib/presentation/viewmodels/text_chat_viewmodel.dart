@@ -1,7 +1,10 @@
+import '../../data/services/chat_session_manager.dart';
 import 'chat_viewmodel.dart';
 
 /// ViewModel for the main Buddy text-chat screen opened from the drawer.
-/// Loads an existing session by [initialSessionId], or creates a new one.
+/// On a normal app open, delegates to the base session lifecycle (reuse empty
+/// or create fresh). Overrides only for the FCM engagement tap path where a
+/// specific session ID is pre-selected.
 class TextChatViewModel extends ChatViewModel {
   final String? initialSessionId;
 
@@ -12,6 +15,7 @@ class TextChatViewModel extends ChatViewModel {
     required super.chatRepository,
     required super.chatBackupService,
     required super.feedbackService,
+    required super.chatSessionManager,
   });
 
   @override
@@ -22,7 +26,7 @@ class TextChatViewModel extends ChatViewModel {
     if (initialSessionId != null) {
       await switchSession(initialSessionId!);
     } else {
-      await startNewChat();
+      await super.initializeSession();
     }
   }
 }

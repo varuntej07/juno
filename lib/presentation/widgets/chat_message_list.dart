@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/models/chat_message_model.dart';
 import 'clarification_card.dart';
-import 'juno_response_bubble.dart';
+import 'buddy_response_bubble.dart';
 import 'streaming_message_bubble.dart';
 
 typedef OnRetry = void Function(String messageId);
@@ -71,7 +71,7 @@ class ChatMessageList extends StatelessWidget {
               );
             }
 
-            return JunoResponseBubble(
+            return BuddyResponseBubble(
               message: msg,
               isLastAssistantMessage: index == lastAssistantIdx,
               onRetry: onRetry,

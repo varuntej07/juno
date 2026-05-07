@@ -63,12 +63,13 @@ class Settings(BaseSettings):
     NUTRITION_SCAN_CONFIDENCE_THRESHOLD: float = 0.85
 
     # Model tiers
-    #   TIER_CHEAP    -> cheap + fast; background tasks, notification copy, simple classification
-    #   TIER_BALANCED -> mid-tier; tool-calling tasks, structured output with reasoning
-    #   TIER_EXPERT   -> full reasoning; main chat, complex multi-turn (most expensive)
+    # TIER_CHEAP -> cheap + fast; background tasks, notification copy, simple classification
+    # TIER_BALANCED -> mid-tier; tool-calling tasks, structured output with reasoning
+    # TIER_EXPERT -> full reasoning; main chat, complex multi-turn (most expensive)
     # Provider is inferred from the model ID prefix by ModelProvider.
     TIER_CHEAP: str = "gemini-2.5-flash"
-    TIER_CHEAP_FALLBACK: str = "gemini-2.0-flash"  # used when TIER_CHEAP exhausts retries
+    TIER_CHEAP_FALLBACK: str = "gemini-2.5-flash-lite"           # tried when TIER_CHEAP fails
+    TIER_CHEAP_LAST_RESORT: str = "claude-haiku-4-5-20251001"    # tried when TIER_CHEAP_FALLBACK also fails
     TIER_BALANCED: str = "claude-haiku-4-5-20251001"
     TIER_EXPERT: str = "claude-sonnet-4-6"
 

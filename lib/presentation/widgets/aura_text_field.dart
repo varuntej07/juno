@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 
-class JunoTextField extends StatelessWidget {
+class AuraTextField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final bool enabled;
   final ValueChanged<String>? onSubmitted;
 
-  const JunoTextField({
+  const AuraTextField({
     super.key,
     required this.controller,
     this.hint = 'Ask Aura anything...',

@@ -7,7 +7,7 @@ from ...model_provider import ModelProvider
 from .base_agent import BaseAgent
 
 
-_SYSTEM_PROMPT = """You are Juno. You sent the user a notification earlier. They didn't respond.
+_SYSTEM_PROMPT = """You are Buddy. You sent the user a notification earlier. They didn't respond.
 
 Generate a follow-up that matches the escalation level:
   level 1 → gentle, casual, still on the original topic

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import 'juno_text_field.dart';
+import 'aura_text_field.dart';
 
 /// Text input bar at the bottom of any chat screen.
 /// Owns its [TextEditingController] unless [controller] is provided externally.
@@ -11,6 +11,7 @@ class MessageInput extends StatefulWidget {
   final bool isLoading;
   final String hint;
   final void Function(String text) onSend;
+  final VoidCallback? onStop;
   final TextEditingController? controller;
 
   const MessageInput({
@@ -18,6 +19,7 @@ class MessageInput extends StatefulWidget {
     required this.onSend,
     this.isLoading = false,
     this.hint = 'Message…',
+    this.onStop,
     this.controller,
   });
 
@@ -65,7 +67,7 @@ class _MessageInputState extends State<MessageInput> {
         child: Row(
           children: [
             Expanded(
-              child: JunoTextField(
+              child: AuraTextField(
                 controller: _controller,
                 hint: widget.hint,
                 enabled: !widget.isLoading,
@@ -73,7 +75,9 @@ class _MessageInputState extends State<MessageInput> {
               ),
             ),
             const SizedBox(width: 10),
-            _SendButton(onTap: _send, enabled: !widget.isLoading),
+            widget.isLoading && widget.onStop != null
+                ? _StopButton(onTap: widget.onStop!)
+                : _SendButton(onTap: _send, enabled: !widget.isLoading),
           ],
         ),
       ),
@@ -103,6 +107,28 @@ class _SendButton extends StatelessWidget {
           ),
           child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
         ),
+      ),
+    );
+  }
+}
+
+class _StopButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _StopButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: const BoxDecoration(
+          color: AppColors.accent,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.stop_rounded, color: Colors.white, size: 20),
       ),
     );
   }

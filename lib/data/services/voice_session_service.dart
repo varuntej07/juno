@@ -9,6 +9,7 @@ import '../../core/errors/app_exception.dart';
 import '../../core/logging/app_logger.dart';
 import '../../core/network/api_response.dart';
 import '../models/voice_models.dart';
+import 'analytics_service.dart';
 
 const _tag = 'VoiceSession';
 
@@ -112,6 +113,7 @@ class VoiceSessionService {
       await _room!.localParticipant?.setMicrophoneEnabled(true);
 
       AppLogger.info('LiveKit mic enabled', tag: _tag);
+      unawaited(AnalyticsService.logVoiceStarted());
       return const Result.success(null);
     } catch (e, st) {
       AppLogger.error('Failed to connect to LiveKit', error: e, stackTrace: st,

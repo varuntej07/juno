@@ -12,8 +12,10 @@ import '../../data/local/app_database.dart';
 import '../../data/models/chat_message_model.dart';
 import '../../data/models/clarification_payload.dart';
 import '../../data/repositories/chat_repository.dart';
+import '../../data/services/analytics_service.dart';
 import '../../data/services/backend_api_service.dart';
 import '../../data/services/chat_backup_service.dart';
+import '../../data/services/chat_session_manager.dart';
 import '../../data/services/feedback_service.dart';
 import 'view_state.dart';
 
@@ -28,6 +30,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   final ChatRepository _chatRepository;
   final ChatBackupService _chatBackupService;
   final FeedbackService _feedbackService;
+  final ChatSessionManager _sessionManager;
   final _uuid = const Uuid();
 
   StreamSubscription<ConnectivityStatus>? _connectivitySub;
@@ -51,11 +54,13 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     required ChatRepository chatRepository,
     required ChatBackupService chatBackupService,
     required FeedbackService feedbackService,
+    required ChatSessionManager chatSessionManager,
   })  : _backendService = backendService,
         _connectivityService = connectivityService,
         _chatRepository = chatRepository,
         _chatBackupService = chatBackupService,
-        _feedbackService = feedbackService {
+        _feedbackService = feedbackService,
+        _sessionManager = chatSessionManager {
     _connectivitySub = _connectivityService.statusStream.listen((status) {
       _isOffline = status == ConnectivityStatus.disconnected;
       safeNotifyListeners();
@@ -93,7 +98,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     _currentUserId = _normalizeUserId(userId);
 
     if (agentId == null) {
-      // Main chat: restore from backup on first launch
+      // Main chat: restore from backup on first launch, then process pending jobs
       await _loadSessions();
       if (_sessions.isEmpty && _currentUserId != null) {
         await _chatBackupService.restoreFromBackupIfLocalEmpty(_currentUserId!);
@@ -102,13 +107,22 @@ abstract class ChatViewModel extends SafeChangeNotifier {
       if (_currentUserId != null) {
         unawaited(_chatBackupService.processPendingJobs(userId: _currentUserId));
       }
+    } else {
+      // Agent threads: load session list so _sessionTitleSet resolves correctly
+      // in _loadSession when the session already has a title.
+      await _loadSessions();
     }
 
     await initializeSession();
   }
 
-  /// Subclasses decide which session to open on init.
-  Future<void> initializeSession();
+  /// Opens the correct session on init. Default: reuse the most recent session
+  /// if it is empty, otherwise create a fresh one (ChatGPT-style lifecycle).
+  /// Subclasses may override for specialised loading (e.g. FCM tap).
+  Future<void> initializeSession() async {
+    final sessionId = await _sessionManager.getOrCreateFreshSession(agentId);
+    await _loadSession(sessionId);
+  }
 
   // ── Session management ─────────────────────────────────────────────────────
 
@@ -125,7 +139,14 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     _streamingText = '';
     _thinkingMessage = null;
     _error = null;
-    await _openFreshSession();
+    // Reuse an existing empty session rather than creating a new one every time,
+    // so the history list doesn't fill up with empty placeholder sessions.
+    try {
+      _currentSessionId = await _sessionManager.getOrCreateFreshSession(agentId);
+      _sessionTitleSet = false;
+    } catch (e) {
+      AppLogger.error('Failed to start new chat', error: e, tag: 'ChatViewModel');
+    }
     _setState(ViewState.idle);
     await _refreshSessions();
   }
@@ -250,6 +271,19 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     _setState(_messages.isEmpty ? ViewState.idle : ViewState.loaded);
   }
 
+  /// Cancels the active stream and discards any partial response.
+  /// The user message is already persisted — only the incomplete assistant
+  /// text is dropped. No-op if nothing is streaming.
+  void stopGeneration() {
+    if (!_isStreaming) return;
+    _streamSub?.cancel();
+    _streamSub = null;
+    _isStreaming = false;
+    _streamingText = '';
+    _thinkingMessage = null;
+    _setState(_messages.isEmpty ? ViewState.idle : ViewState.loaded);
+  }
+
   // ── Engagement pre-load ────────────────────────────────────────────────────
 
   /// Pre-loads an assistant message from an engagement notification tap before
@@ -354,6 +388,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
             _error = null;
             _setState(ViewState.loaded);
             ErrorHandler.logBreadcrumb('message_sent');
+            unawaited(AnalyticsService.logMessageSent(agentId ?? 'general'));
 
           case ErrorStreamEvent(:final message):
             _isStreaming = false;
@@ -450,9 +485,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   Future<void> _refreshSessions() async => _loadSessions(notify: true);
 
   Future<void> _loadSessions({bool notify = false}) async {
-    final result = agentId == null
-        ? await _chatRepository.loadMainSessions(limit: 25)
-        : await _chatRepository.loadRecentSessions(limit: 1);
+    final result = await _chatRepository.getSessionsForAgent(agentId);
     result.when(
       success: (sessions) {
         _sessions = sessions;

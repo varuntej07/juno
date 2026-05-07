@@ -21,9 +21,11 @@ class _AuraAppState extends State<AuraApp> {
     super.initState();
     // context.read is safe in initState — widget is already in the tree.
     _router = buildRouter(context.read<AuthViewModel>());
-    // Kick off auth state resolution; the router's refreshListenable fires once
-    // AuthViewModel.state leaves idle/loading, triggering the redirect.
-    context.read<AuthViewModel>().initialize();
+    // Defer initialize() to after the first frame so notifyListeners() doesn't
+    // fire while the widget tree is still being mounted (setState-during-build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AuthViewModel>().initialize();
+    });
   }
 
   @override

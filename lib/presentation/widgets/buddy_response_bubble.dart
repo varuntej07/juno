@@ -13,7 +13,7 @@ typedef OnRetry = void Function(String messageId);
 typedef OnEdit = void Function(String messageId, String newText);
 typedef OnFeedback = void Function(String messageId, MessageFeedback? feedback);
 
-class JunoResponseBubble extends StatefulWidget {
+class BuddyResponseBubble extends StatefulWidget {
   final ChatMessageModel message;
   final bool isLastAssistantMessage;
   final OnRetry? onRetry;
@@ -23,7 +23,7 @@ class JunoResponseBubble extends StatefulWidget {
   /// Called when the user taps "View Reminders" on the inline ReminderCard.
   final VoidCallback? onViewReminders;
 
-  const JunoResponseBubble({
+  const BuddyResponseBubble({
     super.key,
     required this.message,
     this.isLastAssistantMessage = false,
@@ -34,10 +34,10 @@ class JunoResponseBubble extends StatefulWidget {
   });
 
   @override
-  State<JunoResponseBubble> createState() => _JunoResponseBubbleState();
+  State<BuddyResponseBubble> createState() => _BuddyResponseBubbleState();
 }
 
-class _JunoResponseBubbleState extends State<JunoResponseBubble> {
+class _BuddyResponseBubbleState extends State<BuddyResponseBubble> {
   bool _isEditing = false;
   late TextEditingController _editController;
 
@@ -48,7 +48,7 @@ class _JunoResponseBubbleState extends State<JunoResponseBubble> {
   }
 
   @override
-  void didUpdateWidget(covariant JunoResponseBubble oldWidget) {
+  void didUpdateWidget(covariant BuddyResponseBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.message.id != widget.message.id) {
       _editController.text = widget.message.text;

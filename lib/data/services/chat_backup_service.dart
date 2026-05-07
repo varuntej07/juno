@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:drift/drift.dart';
 import 'package:firebase_core/firebase_core.dart';
 
@@ -130,6 +130,7 @@ class ChatBackupService {
             lastMessageAt: Value(lastMessageAt),
             lastMessagePreview: Value(data['last_message_preview'] as String?),
             messageCount: Value((data['message_count'] as num?)?.toInt() ?? 0),
+            agentId: Value(data['agent_id'] as String?),
           ),
         );
 
@@ -254,6 +255,7 @@ class ChatBackupService {
       if (session.lastMessagePreview != null)
         'last_message_preview': session.lastMessagePreview,
       'message_count': session.messageCount,
+      if (session.agentId != null) 'agent_id': session.agentId,
     };
   }
 

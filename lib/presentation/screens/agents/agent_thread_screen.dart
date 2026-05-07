@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../data/models/agent.dart';
+import '../../../data/services/analytics_service.dart';
 import '../../viewmodels/agent_viewmodel.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/view_state.dart';
+import '../../widgets/chat_history_drawer.dart';
 import '../../widgets/chat_message_list.dart';
 import '../../widgets/error_display.dart';
 import '../../widgets/message_input.dart';
@@ -73,6 +77,7 @@ class AgentThreadScreen extends StatefulWidget {
 }
 
 class _AgentThreadScreenState extends State<AgentThreadScreen> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _scrollController = ScrollController();
   final _inputController = TextEditingController();
 
@@ -91,7 +96,10 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uid = context.read<AuthViewModel>().user?.uid;
-      context.read<AgentViewModel>().init(uid).then((_) => _scrollToBottom());
+      context.read<AgentViewModel>().init(uid).then((_) {
+        _jumpToBottom();
+        unawaited(AnalyticsService.logAgentSelected(widget.agentId, _agent.name));
+      });
     });
   }
 
@@ -102,6 +110,17 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
     super.dispose();
   }
 
+  // Instant jump used on initial load and session switch so the user lands
+  // directly at the last message without seeing the list animate from the top.
+  void _jumpToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  // Animated scroll used while streaming and after sending.
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -120,65 +139,83 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
   Widget build(BuildContext context) {
     final agent = _agent;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textPrimary, size: 20),
-          onPressed: context.pop,
-        ),
-        title: Row(
-          children: [
-            // Hero matches the tile on the agents grid — morphs on navigation
-            Hero(
-              tag: 'agent-icon-${agent.id}',
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: agent.color,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(agent.icon, color: Colors.white, size: 17),
-              ),
+    return Consumer<AgentViewModel>(
+      builder: (context, vm, _) {
+        if (vm.isStreaming) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _scrollToBottom());
+        }
+
+        return Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            backgroundColor: AppColors.surface,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.menu_rounded,
+                  color: AppColors.textSecondary, size: 22),
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
             ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            title: Row(
               children: [
-                Text(
-                  agent.name,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                // Hero matches the tile on the agents grid — morphs on navigation
+                Hero(
+                  tag: 'agent-icon-${agent.id}',
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: agent.color,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(agent.icon, color: Colors.white, size: 17),
                   ),
                 ),
-                if (agent.subtitle.isNotEmpty)
-                  Text(
-                    agent.subtitle,
-                    style: const TextStyle(
-                      color: AppColors.textTertiary,
-                      fontSize: 11,
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      agent.name,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
+                    if (agent.subtitle.isNotEmpty)
+                      Text(
+                        agent.subtitle,
+                        style: const TextStyle(
+                          color: AppColors.textTertiary,
+                          fontSize: 11,
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-      ),
-      body: SafeArea(
-        child: Consumer<AgentViewModel>(
-          builder: (context, vm, _) {
-            if (vm.isStreaming) {
-              WidgetsBinding.instance
-                  .addPostFrameCallback((_) => _scrollToBottom());
-            }
-
-            return Column(
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: AppColors.textPrimary, size: 20),
+                onPressed: context.pop,
+              ),
+            ],
+          ),
+          drawer: ChatHistoryDrawer(
+            sessions: vm.sessions,
+            currentSessionId: vm.currentSessionId,
+            onSessionSelected: (sessionId) {
+              vm.switchSession(sessionId).then((_) => _jumpToBottom());
+            },
+            onNewChat: () {
+              vm.startNewChat();
+            },
+          ),
+          body: SafeArea(
+            child: Column(
               children: [
                 Expanded(
                   child: vm.messages.isEmpty && !vm.isStreaming
@@ -229,12 +266,13 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
                     vm.sendMessage(text, _uid);
                     _scrollToBottom();
                   },
+                  onStop: vm.stopGeneration,
                 ),
               ],
-            );
-          },
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

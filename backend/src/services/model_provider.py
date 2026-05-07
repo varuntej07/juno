@@ -108,7 +108,7 @@ class ModelProvider:
         logger.debug("ModelProvider.cheap", {"model": model_id, "prompt_len": len(prompt)})
         return await self._call(
             model_id=model_id,
-            fallback_model_id=settings.TIER_CHEAP_FALLBACK,
+            fallback_chain=[settings.TIER_CHEAP_FALLBACK, settings.TIER_CHEAP_LAST_RESORT],
             prompt=prompt,
             system=system,
             response_model=response_model,
@@ -165,7 +165,7 @@ class ModelProvider:
         self,
         *,
         model_id: str,
-        fallback_model_id: str | None = None,
+        fallback_chain: list[str] | None = None,
         prompt: str,
         system: str | None,
         tools: list[dict] | None = None,
@@ -174,11 +174,12 @@ class ModelProvider:
         temperature: float,
     ) -> str | T:
         provider = _infer_provider(model_id)
+        chain = list(fallback_chain or [])
 
         if provider == "gemini":
             raw = await self._call_gemini(
                 model_id=model_id,
-                fallback_model_id=fallback_model_id,
+                fallback_chain=chain,
                 prompt=prompt,
                 system=system,
                 temperature=temperature,
@@ -207,7 +208,7 @@ class ModelProvider:
         self,
         *,
         model_id: str,
-        fallback_model_id: str | None = None,
+        fallback_chain: list[str],
         prompt: str,
         system: str | None,
         temperature: float,
@@ -239,25 +240,34 @@ class ModelProvider:
             )
             return resp.text or ""
 
+        async def _use_next_in_chain(reason: str, log_extra: dict) -> str:
+            next_model = fallback_chain[0]
+            logger.warn(f"ModelProvider: {reason} — falling back", {
+                "from_model": model_id,
+                "to_model": next_model,
+                **log_extra,
+            })
+            return await self._call(
+                model_id=next_model,
+                fallback_chain=fallback_chain[1:],
+                prompt=prompt,
+                system=system,
+                response_model=None,
+                temperature=temperature,
+            )
+
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 return await asyncio.wait_for(asyncio.to_thread(_sync), timeout=_TIMEOUT_S)
             except asyncio.TimeoutError:
                 if attempt == _MAX_RETRIES:
-                    if fallback_model_id:
-                        logger.warn("ModelProvider: Gemini primary timed out, switching to fallback", {
-                            "primary_model": model_id,
-                            "fallback_model": fallback_model_id,
-                        })
-                        return await self._call_gemini(
-                            model_id=fallback_model_id,
-                            prompt=prompt,
-                            system=system,
-                            temperature=temperature,
+                    if fallback_chain:
+                        return await _use_next_in_chain(
+                            "timeout after retries",
+                            {"attempt": attempt, "timeout_s": _TIMEOUT_S},
                         )
-                    logger.exception("ModelProvider: Gemini timeout after retries", {
+                    logger.exception("ModelProvider: Gemini timeout after retries, no fallback left", {
                         "model": model_id,
-                        "prompt_len": len(prompt),
                         "attempt": attempt,
                         "timeout_s": _TIMEOUT_S,
                     })
@@ -275,29 +285,35 @@ class ModelProvider:
                 # so also check the error string for known transient gRPC status names.
                 code = getattr(exc, "code", None)
                 error_str = str(exc).upper()
+                is_model_unavailable = code == 404 or "NOT_FOUND" in error_str
                 retryable = (
                     code == 429
                     or (isinstance(code, int) and 500 <= code < 600)
                     or "UNAVAILABLE" in error_str
                     or "RESOURCE_EXHAUSTED" in error_str
                 )
-                if not retryable or attempt == _MAX_RETRIES:
-                    if retryable and attempt == _MAX_RETRIES and fallback_model_id:
-                        logger.warn("ModelProvider: Gemini primary exhausted retries, switching to fallback", {
-                            "primary_model": model_id,
-                            "fallback_model": fallback_model_id,
-                            "error_type": type(exc).__name__,
-                            "code": code,
-                        })
-                        return await self._call_gemini(
-                            model_id=fallback_model_id,
-                            prompt=prompt,
-                            system=system,
-                            temperature=temperature,
+                if is_model_unavailable:
+                    # Model doesn't exist for this account — retrying the same model is pointless
+                    if fallback_chain:
+                        return await _use_next_in_chain(
+                            "model unavailable (404)",
+                            {"code": code, "error": str(exc)[:120]},
                         )
-                    logger.exception("ModelProvider: Gemini call failed", {
+                    logger.exception("ModelProvider: Gemini model unavailable, no fallback left", {
                         "model": model_id,
-                        "prompt_len": len(prompt),
+                        "code": code,
+                        "error": str(exc),
+                    })
+                    raise
+                if not retryable or attempt == _MAX_RETRIES:
+                    if fallback_chain:
+                        reason = "retries exhausted" if attempt == _MAX_RETRIES else "non-retryable error"
+                        return await _use_next_in_chain(
+                            reason,
+                            {"attempt": attempt, "code": code, "error_type": type(exc).__name__},
+                        )
+                    logger.exception("ModelProvider: Gemini call failed, no fallback left", {
+                        "model": model_id,
                         "attempt": attempt,
                         "error_type": type(exc).__name__,
                         "code": code,
@@ -311,7 +327,6 @@ class ModelProvider:
                     "delay_s": round(delay, 2),
                     "error_type": type(exc).__name__,
                     "code": code,
-                    "error": str(exc),
                 })
                 await asyncio.sleep(delay)
         # retry loop always returns or raises; this line is unreachable

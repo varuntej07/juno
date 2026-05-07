@@ -12,6 +12,7 @@ import '../data/repositories/chat_repository.dart';
 import '../data/repositories/memory_repository.dart';
 import '../data/repositories/reminder_repository.dart';
 import '../data/services/chat_backup_service.dart';
+import '../data/services/chat_session_manager.dart';
 import '../data/services/feedback_service.dart';
 import '../data/services/firebase_auth_service.dart';
 import '../data/services/firestore_service.dart';
@@ -21,12 +22,14 @@ import '../data/services/notification_service.dart';
 import '../data/services/nutrition_scan_service.dart';
 import '../data/services/voice_session_service.dart';
 import '../data/services/wake_word_service.dart';
+import '../data/services/subscription_service.dart';
 import '../presentation/viewmodels/auth_viewmodel.dart';
 import '../presentation/viewmodels/connectors_viewmodel.dart';
 import '../presentation/viewmodels/dietary_profile_viewmodel.dart';
 import '../presentation/viewmodels/home_viewmodel.dart';
 import '../presentation/viewmodels/nutrition_scan_viewmodel.dart';
 import '../presentation/viewmodels/settings_viewmodel.dart';
+import '../presentation/viewmodels/subscription_viewmodel.dart';
 
 List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
   // Infrastructure
@@ -46,6 +49,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     db: appDatabase,
     chatBackupService: chatBackupService,
   );
+  final chatSessionManager = ChatSessionManager(repository: chatRepository);
 
   // Remote services
   final backendApiService = BackendApiService(
@@ -63,6 +67,10 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
   );
 
   final wakeWordService = WakeWordService();
+  final subscriptionService = SubscriptionService(
+    firestoreService: firestoreService,
+    authService: firebaseAuthService,
+  );
 
   // Domain repositories
   final authRepository = AuthRepository(
@@ -89,6 +97,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     Provider<ChatBackupService>.value(value: chatBackupService),
     Provider<FeedbackService>.value(value: feedbackService),
     Provider<ChatRepository>.value(value: chatRepository),
+    Provider<ChatSessionManager>.value(value: chatSessionManager),
 
     // Remote services
     Provider<NotificationService>.value(value: notificationService),
@@ -99,6 +108,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     ),
     Provider<VoiceSessionService>.value(value: voiceSessionService),
     Provider<WakeWordService>.value(value: wakeWordService),
+    ChangeNotifierProvider<SubscriptionService>.value(value: subscriptionService),
 
     // Domain repositories
     Provider<AuthRepository>.value(value: authRepository),
@@ -125,14 +135,16 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
       create: (_) => SettingsViewModel(firestoreService: firestoreService),
     ),
     ChangeNotifierProvider<ConnectorsViewModel>(
-      create: (_) =>
-          ConnectorsViewModel(connectorService: googleCalendarConnectorService),
-    ),
+      create: (_) => ConnectorsViewModel(connectorService: googleCalendarConnectorService),
+      ),
     ChangeNotifierProvider<NutritionScanViewModel>(
       create: (_) => NutritionScanViewModel(service: nutritionScanService),
     ),
     ChangeNotifierProvider<DietaryProfileViewModel>(
       create: (_) => DietaryProfileViewModel(service: nutritionScanService, prefs: prefs),
+    ),
+    ChangeNotifierProvider<SubscriptionViewModel>(
+      create: (_) => SubscriptionViewModel(subscriptionService: subscriptionService),
     ),
   ];
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +10,7 @@ import 'core/config/environment.dart';
 import 'core/config/firebase_config.dart';
 import 'core/errors/error_handler.dart';
 import 'core/logging/app_logger.dart';
+import 'data/services/analytics_service.dart';
 import 'di/providers.dart';
 
 /// FCM background message handler.
@@ -26,30 +29,52 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   );
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  // firebaseReady is declared outside so the error handler closure can read it
+  // even if an error fires before or after Firebase initializes.
+  bool firebaseReady = false;
 
-  final firebaseReady = await FirebaseConfig.initialize();
+  runZonedGuarded(
+    () async {
+      // ensureInitialized and runApp must be in the same zone to avoid the
+      // "Zone mismatch" binding assertion introduced in Flutter 3.x.
+      WidgetsFlutterBinding.ensureInitialized();
 
-  // Register the background handler before runApp so FCM can wire it up during app startup
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      firebaseReady = await FirebaseConfig.initialize();
 
-  ErrorHandler.init();
-  ErrorHandler.setEnvironment(Environment.current.env.name);
+      // Register the background handler before runApp so FCM can wire it up during app startup
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  if (firebaseReady && !Environment.isDev) {
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-  }
+      ErrorHandler.init();
+      ErrorHandler.setEnvironment(Environment.current.env.name);
 
-  AppLogger.info(
-    'Aura starting',
-    tag: 'main',
-    metadata: {
-      'env': Environment.current.env.name,
-      'firebase_ready': firebaseReady,
+      if (firebaseReady && !Environment.isDev) {
+        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+        unawaited(AnalyticsService.logAppOpen());
+      }
+
+      AppLogger.info(
+        'Aura starting',
+        tag: 'main',
+        metadata: {
+          'env': Environment.current.env.name,
+          'firebase_ready': firebaseReady,
+        },
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      runApp(MultiProvider(providers: buildProviders(prefs), child: const AuraApp()));
+    },
+    (error, stack) {
+      AppLogger.error(
+        'Uncaught async error',
+        error: error,
+        stackTrace: stack,
+        tag: 'main',
+      );
+      if (firebaseReady && !Environment.isDev) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      }
     },
   );
-
-  final prefs = await SharedPreferences.getInstance();
-  runApp(MultiProvider(providers: buildProviders(prefs), child: const AuraApp()));
 }

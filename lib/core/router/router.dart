@@ -6,6 +6,7 @@ import '../../data/repositories/agent_suggestion_pills_repository.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/services/backend_api_service.dart';
 import '../../data/services/chat_backup_service.dart';
+import '../../data/services/chat_session_manager.dart';
 import '../../data/services/feedback_service.dart';
 import '../../core/network/connectivity_service.dart';
 import '../../presentation/screens/app_shell.dart';
@@ -77,6 +78,7 @@ GoRouter buildRouter(AuthViewModel authViewModel) {
                 chatBackupService: context.read<ChatBackupService>(),
                 feedbackService: context.read<FeedbackService>(),
                 connectivityService: context.read<ConnectivityService>(),
+                chatSessionManager: context.read<ChatSessionManager>(),
                 suggestionPillsRepository:
                     context.read<AgentSuggestionPillsRepository>(),
               ),
@@ -103,6 +105,7 @@ GoRouter buildRouter(AuthViewModel authViewModel) {
                 chatBackupService: context.read<ChatBackupService>(),
                 feedbackService: context.read<FeedbackService>(),
                 connectivityService: context.read<ConnectivityService>(),
+                chatSessionManager: context.read<ChatSessionManager>(),
               ),
               child: const ChatScreen(),
             ),

@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/text_chat_viewmodel.dart';
-import '../../viewmodels/view_state.dart';
+import '../../widgets/chat_history_drawer.dart';
 import '../../widgets/chat_message_list.dart';
 import '../../widgets/error_display.dart';
 import '../../widgets/message_input.dart';
@@ -21,6 +21,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _scrollController = ScrollController();
 
   @override
@@ -29,7 +30,7 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final uid = context.read<AuthViewModel>().user?.uid;
       await context.read<TextChatViewModel>().init(uid);
-      _scrollToBottom();
+      _jumpToBottom();
 
       // Handle engagement pre-load passed as route extra
       final extra = GoRouterState.of(context).extra;
@@ -40,7 +41,7 @@ class _ChatScreenState extends State<ChatScreen> {
               agentContext: extra['agentContext'] as String,
               initialMessage: extra['initialMessage'] as String,
             );
-        _scrollToBottom();
+        _jumpToBottom();
       }
     });
   }
@@ -51,6 +52,17 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  // Used on initial load and session switch — no animation so the user lands
+  // directly at the last message without seeing the list scroll up from the top.
+  void _jumpToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  // Used while streaming and after sending — animated so new content feels live.
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -67,34 +79,52 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textPrimary, size: 20),
-          onPressed: context.pop,
-        ),
-        title: const Text(
-          'Buddy',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: Consumer<TextChatViewModel>(
-          builder: (context, vm, _) {
-            if (vm.isStreaming) {
-              WidgetsBinding.instance
-                  .addPostFrameCallback((_) => _scrollToBottom());
-            }
+    return Consumer<TextChatViewModel>(
+      builder: (context, vm, _) {
+        if (vm.isStreaming) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _scrollToBottom());
+        }
 
-            return Column(
+        return Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            backgroundColor: AppColors.surface,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.menu_rounded,
+                  color: AppColors.textSecondary, size: 22),
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+            title: const Text(
+              'Buddy',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: AppColors.textPrimary, size: 20),
+                onPressed: context.pop,
+              ),
+            ],
+          ),
+          drawer: ChatHistoryDrawer(
+            sessions: vm.sessions,
+            currentSessionId: vm.currentSessionId,
+            onSessionSelected: (sessionId) {
+              vm.switchSession(sessionId).then((_) => _jumpToBottom());
+            },
+            onNewChat: () {
+              vm.startNewChat();
+            },
+          ),
+          body: SafeArea(
+            child: Column(
               children: [
                 Expanded(
                   child: vm.messages.isEmpty && !vm.isStreaming
@@ -131,12 +161,13 @@ class _ChatScreenState extends State<ChatScreen> {
                     vm.sendMessage(text, _uid);
                     _scrollToBottom();
                   },
+                  onStop: vm.stopGeneration,
                 ),
               ],
-            );
-          },
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

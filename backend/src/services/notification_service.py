@@ -7,13 +7,13 @@ Usage anywhere in the backend:
 
     result = await send_notification(
         user_id,
-        title="Juno Reminder",
+        title="Buddy Reminder",
         body="Time to complete your rental application.",
         data={"reminder_id": "abc123"},
         notification_type="reminder",
         priority="high",
         collapse_key="reminder_abc123",
-        apns_category="JUNO_REMINDER",
+        apns_category="BUDDY_REMINDER",
     )
 
 ``send_notification`` is an async function — all blocking Firestore and

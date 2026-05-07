@@ -54,7 +54,7 @@ async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str
 
                 result = await send_notification(
                     user_id,
-                    title="Juno Reminder",
+                    title="Buddy Reminder",
                     body=body,
                     data={
                         "reminder_id": reminder_id,
@@ -64,7 +64,7 @@ async def handle_scheduler_tick(event: dict[str, Any] | None = None) -> dict[str
                     priority="high",
                     # Collapse prevents duplicate banners if the scheduler fires more than once before the user dismisses.
                     collapse_key=f"reminder_{reminder_id}",
-                    apns_category="JUNO_REMINDER",
+                    apns_category="BUDDY_REMINDER",
                 )
 
                 if result.delivered:

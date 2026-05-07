@@ -19,7 +19,7 @@ from ...model_provider import ModelProvider
 from .base_agent import BaseAgent
 
 
-_SYSTEM_PROMPT = """You are Juno, a brutally honest health companion.
+_SYSTEM_PROMPT = """You are Buddy, a brutally honest health companion.
 Think: that one friend who read the label before you did.
 
 Generate a push notification about a food the user just scanned.

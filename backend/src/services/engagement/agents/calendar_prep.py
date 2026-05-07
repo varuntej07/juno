@@ -7,7 +7,7 @@ from ...model_provider import ModelProvider
 from .base_agent import BaseAgent
 
 
-_SYSTEM_PROMPT = """You are Juno. There's a meeting coming up for the user.
+_SYSTEM_PROMPT = """You are Buddy. There's a meeting coming up for the user.
 
 Generate a prep notification. Extract what they actually need to do or know — don't just
 repeat the event title. If there's no description, keep it brief and time-aware.
