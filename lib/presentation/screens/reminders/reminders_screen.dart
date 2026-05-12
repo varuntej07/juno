@@ -3,10 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../data/models/reminder_model.dart';
-import '../../../data/repositories/reminder_repository.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/reminders_viewmodel.dart';
-import '../../viewmodels/view_state.dart';
 
 /// Full-page reminders list, accessible from Settings → Reminders.
 ///
@@ -20,13 +18,9 @@ import '../../viewmodels/view_state.dart';
 class RemindersScreen extends StatelessWidget {
   const RemindersScreen({super.key});
 
-  static Route<void> route(BuildContext context) {
-    final repo = context.read<ReminderRepository>();
+  static Route<void> route() {
     return MaterialPageRoute(
-      builder: (_) => ChangeNotifierProvider(
-        create: (_) => RemindersViewModel(repository: repo),
-        child: const RemindersScreen(),
-      ),
+      builder: (_) => const RemindersScreen(),
     );
   }
 

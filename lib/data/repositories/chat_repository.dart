@@ -23,10 +23,14 @@ class ChatRepository {
   })  : _db = db,
         _chatBackupService = chatBackupService;
 
-  /// Returns recent sessions that belong to main Buddy chat (no agent).
-  Future<Result<List<ChatSession>>> loadMainSessions({int limit = 25}) async {
+  /// Returns recent main Buddy chat sessions (no agent) for the given user.
+  Future<Result<List<ChatSession>>> loadMainSessions({
+    required String userId,
+    int limit = 25,
+  }) async {
     try {
       final rows = await (_db.select(_db.chatSessions)
+            ..where((t) => t.userId.equals(userId))
             ..where((t) => t.agentId.isNull())
             ..where((t) => t.messageCount.isBiggerThanValue(0))
             ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
@@ -40,10 +44,13 @@ class ChatRepository {
     }
   }
 
-  /// Returns the most recent session for the given agentId (null = main chat).
-  /// Returns null if no session exists yet.
-  Future<ChatSession?> getMostRecentSessionForAgent(String? agentId) async {
+  /// Returns the most recent session for the given user + agentId (null = main chat).
+  Future<ChatSession?> getMostRecentSessionForAgent({
+    required String userId,
+    required String? agentId,
+  }) async {
     final query = _db.select(_db.chatSessions);
+    query.where((t) => t.userId.equals(userId));
     if (agentId == null) {
       query.where((t) => t.agentId.isNull());
     } else {
@@ -55,10 +62,14 @@ class ChatRepository {
     return query.getSingleOrNull();
   }
 
-  /// Returns all sessions for the given agentId (null = main chat), newest first.
-  Future<Result<List<ChatSession>>> getSessionsForAgent(String? agentId) async {
+  /// Returns all sessions for the given user + agentId (null = main chat), newest first.
+  Future<Result<List<ChatSession>>> getSessionsForAgent({
+    required String userId,
+    required String? agentId,
+  }) async {
     try {
       final query = _db.select(_db.chatSessions);
+      query.where((t) => t.userId.equals(userId));
       if (agentId == null) {
         query.where((t) => t.agentId.isNull());
       } else {
@@ -75,22 +86,27 @@ class ChatRepository {
     }
   }
 
-  /// Returns the single persistent session for an agent, creating it if absent.
-  Future<String> getOrCreateAgentSession(String agentId) async {
+  /// Returns the single persistent session for a user+agent, creating it if absent.
+  Future<String> getOrCreateAgentSession({
+    required String userId,
+    required String agentId,
+  }) async {
     final existing = await (_db.select(_db.chatSessions)
+          ..where((t) => t.userId.equals(userId))
           ..where((t) => t.agentId.equals(agentId))
           ..limit(1))
         .getSingleOrNull();
     if (existing != null) return existing.id;
-    return createSession(agentId: agentId);
+    return createSession(userId: userId, agentId: agentId);
   }
 
-  Future<String> createSession({String? agentId}) async {
+  Future<String> createSession({required String userId, String? agentId}) async {
     final id = _uuid.v4();
     final now = DateTime.now();
     await _db.into(_db.chatSessions).insert(
           ChatSessionsCompanion.insert(
             id: id,
+            userId: Value(userId),
             startedAt: now,
             updatedAt: Value(now),
             agentId: Value(agentId),
@@ -177,7 +193,7 @@ class ChatRepository {
           ChatSessionsCompanion(
             updatedAt: Value(msg.timestamp),
             lastMessageAt: Value(msg.timestamp),
-            lastMessagePreview: Value(_previewText(msg.text)),
+            lastMessagePreview: Value(_truncateMessagePreview(msg.text)),
             messageCount: Value(nextSequence),
           ),
         );
@@ -383,7 +399,7 @@ class ChatRepository {
     return row?.sequence;
   }
 
-  static String _previewText(String text) {
+  static String _truncateMessagePreview(String text) {
     final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (normalized.length <= 160) {
       return normalized;

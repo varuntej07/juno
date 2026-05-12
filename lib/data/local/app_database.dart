@@ -5,13 +5,14 @@ part 'app_database.g.dart';
 
 class ChatSessions extends Table {
   TextColumn get id => text()();
+  // v8: scopes sessions to the authenticated user
+  TextColumn get userId => text().withDefault(const Constant(''))();
   DateTimeColumn get startedAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
   TextColumn get title => text().nullable()();
   DateTimeColumn get lastMessageAt => dateTime().nullable()();
   TextColumn get lastMessagePreview => text().nullable()();
   IntColumn get messageCount => integer().withDefault(const Constant(0))();
-  // v7: links a session to a specific agent; null = main Buddy chat
   TextColumn get agentId => text().nullable()();
 
   @override
@@ -59,10 +60,10 @@ class ChatSyncJobs extends Table {
 
 @DriftDatabase(tables: [ChatSessions, ChatMessages, ChatSyncJobs])
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase() : super(_createDatabaseConnection());
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -164,13 +165,18 @@ class AppDatabase extends _$AppDatabase {
               'ALTER TABLE "chat_sessions" ADD COLUMN "agent_id" TEXT',
             );
           }
+          if (from < 8) {
+            await customStatement(
+              'ALTER TABLE "chat_sessions" ADD COLUMN "user_id" TEXT NOT NULL DEFAULT \'\'',
+            );
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
         },
       );
 
-  static QueryExecutor _openConnection() {
+  static QueryExecutor _createDatabaseConnection() {
     return driftDatabase(name: 'juno_chat');
   }
 }

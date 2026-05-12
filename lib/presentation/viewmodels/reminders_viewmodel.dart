@@ -12,8 +12,12 @@ class RemindersViewModel extends SafeChangeNotifier {
 
   ViewState _state = ViewState.idle;
   List<ReminderModel> _reminders = [];
+  List<ReminderModel> _activeReminders = [];
+  List<ReminderModel> _completedReminders = [];
   String? _errorMessage;
   bool _isLoadingMore = false;
+  bool _hasLoaded = false;
+  String? _loadedForUserId;
 
   ViewState get state => _state;
   String? get errorMessage => _errorMessage;
@@ -27,35 +31,48 @@ class RemindersViewModel extends SafeChangeNotifier {
   // ── Derived lists ───────────────────────────────────────────────────────────
 
   /// Pending / snoozed / fired reminders sorted soonest-first.
-  /// "Fired" means the notification was delivered — not that the user
-  /// has acknowledged it. They stay in Upcoming until explicitly dismissed.
-  List<ReminderModel> get activeReminders => _reminders
-      .where((r) => r.status.isActive)
-      .toList()
-    ..sort((a, b) => a.triggerAt.compareTo(b.triggerAt));
+  List<ReminderModel> get activeReminders => _activeReminders;
 
   /// Only explicitly dismissed reminders, sorted most-recent-first.
-  List<ReminderModel> get completedReminders => _reminders
-      .where((r) => r.status.isCompleted)
-      .toList()
-    ..sort((a, b) => b.triggerAt.compareTo(a.triggerAt));
+  List<ReminderModel> get completedReminders => _completedReminders;
 
-  // ── Load ────────────────────────────────────────────────────────────────────
+  void _rebuildDerivedLists() {
+    _activeReminders = _reminders.where((r) => r.status.isActive).toList()
+      ..sort((a, b) => a.triggerAt.compareTo(b.triggerAt));
+    _completedReminders = _reminders.where((r) => r.status.isCompleted).toList()
+      ..sort((a, b) => b.triggerAt.compareTo(a.triggerAt));
+  }
 
-  /// Loads the first page. Always resets pagination and local state.
+  /// Loads the first page. No-ops if already loaded for this user.
+  /// Call [refreshReminders] to force a reload.
   Future<void> loadReminders(String userId) async {
+    if (_hasLoaded && _loadedForUserId == userId) return;
+    await _fetchFirstPage(userId);
+  }
+
+  /// Forces a full reload from Firestore, discarding cached state.
+  Future<void> refreshReminders(String userId) async {
+    await _fetchFirstPage(userId);
+  }
+
+  Future<void> _fetchFirstPage(String userId) async {
     _state = ViewState.loading;
     _errorMessage = null;
     _reminders = [];
     _isLoadingMore = false;
+    _hasLoaded = false;
     _repository.resetPagination();
+    _rebuildDerivedLists();
     safeNotifyListeners();
 
     final result = await _repository.getNextPage(userId);
     result.when(
       success: (items) {
         _reminders = items;
+        _hasLoaded = true;
+        _loadedForUserId = userId;
         _state = ViewState.loaded;
+        _rebuildDerivedLists();
         safeNotifyListeners();
       },
       failure: (error) {
@@ -84,6 +101,7 @@ class RemindersViewModel extends SafeChangeNotifier {
       success: (items) {
         _reminders.addAll(items);
         _isLoadingMore = false;
+        _rebuildDerivedLists();
         safeNotifyListeners();
       },
       failure: (error) {
@@ -100,8 +118,6 @@ class RemindersViewModel extends SafeChangeNotifier {
     );
   }
 
-  // ── Complete / undo ─────────────────────────────────────────────────────────
-
   /// Marks a reminder as dismissed (Google Tasks-style "complete").
   /// Optimistically updates local state so the UI is instant.
   Future<void> markComplete(String userId, String reminderId) async {
@@ -113,6 +129,7 @@ class RemindersViewModel extends SafeChangeNotifier {
       status: ReminderStatus.dismissed,
       dismissedAt: DateTime.now(),
     );
+    _rebuildDerivedLists();
     safeNotifyListeners();
 
     final result = await _repository.updateStatus(
@@ -133,6 +150,7 @@ class RemindersViewModel extends SafeChangeNotifier {
           tag: 'RemindersVM',
           metadata: {'reminderId': reminderId},
         );
+        _rebuildDerivedLists();
         safeNotifyListeners();
       },
     );
@@ -155,6 +173,7 @@ class RemindersViewModel extends SafeChangeNotifier {
       status: restoredStatus,
       dismissedAt: null, // sentinel in copyWith handles explicit null
     );
+    _rebuildDerivedLists();
     safeNotifyListeners();
 
     final result = await _repository.updateStatus(
@@ -175,12 +194,11 @@ class RemindersViewModel extends SafeChangeNotifier {
           tag: 'RemindersVM',
           metadata: {'reminderId': reminderId},
         );
+        _rebuildDerivedLists();
         safeNotifyListeners();
       },
     );
   }
-
-  // ── Misc ────────────────────────────────────────────────────────────────────
 
   void clearError() {
     _errorMessage = null;

@@ -14,18 +14,30 @@ class ChatSessionManager {
   /// Returns the session ID to use on app open or explicit "new chat".
   /// Reuses the most recent session when it has no messages (avoids
   /// populating history with empty sessions). Creates a new session otherwise.
-  Future<String> getOrCreateFreshSession(String? agentId) async {
-    final recent = await _repository.getMostRecentSessionForAgent(agentId);
+  Future<String> getOrCreateFreshSession({
+    required String userId,
+    required String? agentId,
+  }) async {
+    final recent = await _repository.getMostRecentSessionForAgent(
+      userId: userId,
+      agentId: agentId,
+    );
     if (recent == null || recent.messageCount > 0) {
-      return _repository.createSession(agentId: agentId);
+      return _repository.createSession(userId: userId, agentId: agentId);
     }
     return recent.id;
   }
 
   /// All sessions for this agent/chat slot, newest first. Returns empty list
   /// on any read failure so callers never need to handle errors.
-  Future<List<ChatSession>> getSessionsForAgent(String? agentId) async {
-    final result = await _repository.getSessionsForAgent(agentId);
+  Future<List<ChatSession>> getSessionsForAgent({
+    required String userId,
+    required String? agentId,
+  }) async {
+    final result = await _repository.getSessionsForAgent(
+      userId: userId,
+      agentId: agentId,
+    );
     List<ChatSession> sessions = [];
     result.when(
       success: (s) => sessions = s,

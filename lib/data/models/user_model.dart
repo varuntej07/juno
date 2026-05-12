@@ -1,19 +1,16 @@
 class UserSettings {
   final bool wakeWordEnabled;
   final bool ttsEnabled;
-  final int defaultReminderLeadMinutes;
 
   const UserSettings({
     required this.wakeWordEnabled,
     required this.ttsEnabled,
-    required this.defaultReminderLeadMinutes,
   });
 
   factory UserSettings.defaults() {
     return const UserSettings(
       wakeWordEnabled: false,
       ttsEnabled: true,
-      defaultReminderLeadMinutes: 10,
     );
   }
 
@@ -21,26 +18,21 @@ class UserSettings {
     return UserSettings(
       wakeWordEnabled: json['wake_word_enabled'] as bool? ?? false,
       ttsEnabled: json['tts_enabled'] as bool? ?? true,
-      defaultReminderLeadMinutes: json['default_reminder_lead_minutes'] as int? ?? 10,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'wake_word_enabled': wakeWordEnabled,
         'tts_enabled': ttsEnabled,
-        'default_reminder_lead_minutes': defaultReminderLeadMinutes,
       };
 
   UserSettings copyWith({
     bool? wakeWordEnabled,
     bool? ttsEnabled,
-    int? defaultReminderLeadMinutes,
   }) {
     return UserSettings(
       wakeWordEnabled: wakeWordEnabled ?? this.wakeWordEnabled,
       ttsEnabled: ttsEnabled ?? this.ttsEnabled,
-      defaultReminderLeadMinutes:
-          defaultReminderLeadMinutes ?? this.defaultReminderLeadMinutes,
     );
   }
 }

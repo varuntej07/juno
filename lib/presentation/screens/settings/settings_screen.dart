@@ -103,19 +103,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                         // ── Reminders ────────────────────────────────────────
                         _SectionLabel('Reminders'),
-                        _GlassReminderLeadTile(
-                          minutes:
-                              settings?.defaultReminderLeadMinutes ?? 10,
-                          onChanged: settingsVm.setReminderLeadMinutes,
-                        ),
-                        const SizedBox(height: 8),
                         _GlassNavTile(
                           icon: Icons.notifications_outlined,
                           title: 'View Reminders',
                           subtitle: 'See all scheduled reminders',
                           onTap: () => Navigator.push(
                             context,
-                            RemindersScreen.route(context),
+                            RemindersScreen.route(),
                           ),
                         ),
 
@@ -224,106 +218,6 @@ class _GlassToggleTile extends StatelessWidget {
         onChanged: onChanged,
         activeThumbColor: AppColors.accent,
         activeTrackColor: AppColors.accent.withValues(alpha: 0.3),
-      ),
-    );
-  }
-}
-
-//  Reminder lead tile
-
-class _GlassReminderLeadTile extends StatelessWidget {
-  final int minutes;
-  final ValueChanged<int> onChanged;
-
-  const _GlassReminderLeadTile(
-      {required this.minutes, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return _ReminderLeadSlider(minutes: minutes, onChanged: onChanged);
-  }
-}
-
-class _ReminderLeadSlider extends StatefulWidget {
-  final int minutes;
-  final ValueChanged<int> onChanged;
-
-  const _ReminderLeadSlider({
-    required this.minutes,
-    required this.onChanged,
-  });
-
-  @override
-  State<_ReminderLeadSlider> createState() => _ReminderLeadSliderState();
-}
-
-class _ReminderLeadSliderState extends State<_ReminderLeadSlider> {
-  late int _draftMinutes;
-
-  @override
-  void initState() {
-    super.initState();
-    _draftMinutes = widget.minutes;
-  }
-
-  @override
-  void didUpdateWidget(covariant _ReminderLeadSlider oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.minutes != oldWidget.minutes && widget.minutes != _draftMinutes) {
-      _draftMinutes = widget.minutes;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FauxGlassCard(
-      borderRadius: 16,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Default reminder lead time',
-                style: TextStyle(
-                    color: AppColors.textPrimary, fontSize: 15),
-              ),
-              Text(
-                '$_draftMinutes min',
-                style: const TextStyle(
-                  color: AppColors.accent,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: AppColors.accent,
-              inactiveTrackColor: AppColors.glassBorderDim,
-              thumbColor: AppColors.accent,
-              overlayColor: AppColors.accentGlow,
-            ),
-            child: Slider(
-              value: _draftMinutes.toDouble(),
-              min: 1,
-              max: 60,
-              divisions: 59,
-              onChanged: (v) {
-                setState(() => _draftMinutes = v.round());
-              },
-              onChangeEnd: (v) {
-                final committedMinutes = v.round();
-                if (committedMinutes != widget.minutes) {
-                  widget.onChanged(committedMinutes);
-                }
-              },
-            ),
-          ),
-        ],
       ),
     );
   }

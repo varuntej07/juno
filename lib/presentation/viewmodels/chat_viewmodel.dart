@@ -120,11 +120,14 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   /// if it is empty, otherwise create a fresh one (ChatGPT-style lifecycle).
   /// Subclasses may override for specialised loading (e.g. FCM tap).
   Future<void> initializeSession() async {
-    final sessionId = await _sessionManager.getOrCreateFreshSession(agentId);
+    final sessionId = await _sessionManager.getOrCreateFreshSession(
+      userId: _currentUserId ?? '',
+      agentId: agentId,
+    );
     await _loadSession(sessionId);
   }
 
-  // ── Session management ─────────────────────────────────────────────────────
+  // Session management
 
   Future<void> switchSession(String sessionId) async {
     if (_currentSessionId == sessionId) return;
@@ -142,7 +145,10 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     // Reuse an existing empty session rather than creating a new one every time,
     // so the history list doesn't fill up with empty placeholder sessions.
     try {
-      _currentSessionId = await _sessionManager.getOrCreateFreshSession(agentId);
+      _currentSessionId = await _sessionManager.getOrCreateFreshSession(
+        userId: _currentUserId ?? '',
+        agentId: agentId,
+      );
       _sessionTitleSet = false;
     } catch (e) {
       AppLogger.error('Failed to start new chat', error: e, tag: 'ChatViewModel');
@@ -151,7 +157,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     await _refreshSessions();
   }
 
-  // ── Sending messages ───────────────────────────────────────────────────────
+  //  Sending messages
 
   Future<void> sendMessage(String text, String userId) async {
     final trimmed = text.trim();
@@ -284,7 +290,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     _setState(_messages.isEmpty ? ViewState.idle : ViewState.loaded);
   }
 
-  // ── Engagement pre-load ────────────────────────────────────────────────────
+  // Engagement pre-load
 
   /// Pre-loads an assistant message from an engagement notification tap before
   /// the user types anything. Fires the responded callback in the background.
@@ -313,7 +319,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     unawaited(_backendService.markEngagementResponded(engagementId));
   }
 
-  // ── Private helpers ────────────────────────────────────────────────────────
+  // Private helpers
 
   void _streamResponse(String text, ChatMessageModel userMsg) {
     _isStreaming = true;
@@ -473,8 +479,10 @@ abstract class ChatViewModel extends SafeChangeNotifier {
 
   Future<void> _openFreshSession({String? withAgentId}) async {
     try {
-      _currentSessionId =
-          await _chatRepository.createSession(agentId: withAgentId ?? agentId);
+      _currentSessionId = await _chatRepository.createSession(
+        userId: _currentUserId ?? '',
+        agentId: withAgentId ?? agentId,
+      );
       _sessionTitleSet = false;
       await _refreshSessions();
     } catch (e) {
@@ -485,7 +493,10 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   Future<void> _refreshSessions() async => _loadSessions(notify: true);
 
   Future<void> _loadSessions({bool notify = false}) async {
-    final result = await _chatRepository.getSessionsForAgent(agentId);
+    final result = await _chatRepository.getSessionsForAgent(
+      userId: _currentUserId ?? '',
+      agentId: agentId,
+    );
     result.when(
       success: (sessions) {
         _sessions = sessions;

@@ -90,7 +90,9 @@ class HomeViewModel extends SafeChangeNotifier {
     // Create a Drift session to persist voice messages so they appear in
     // Recent Chats in the drawer.
     try {
-      _currentVoiceChatSessionId = await _chatRepository.createSession();
+      _currentVoiceChatSessionId = await _chatRepository.createSession(
+        userId: _currentUserId ?? '',
+      );
     } catch (e) {
       AppLogger.error('Failed to create voice chat session', error: e, tag: 'HomeViewModel');
     }
@@ -179,7 +181,7 @@ class HomeViewModel extends SafeChangeNotifier {
       case 'assistant.text.delta':
         _voiceStatus = VoiceSessionStatus.speaking;
         _liveTranscript = event.text ?? '';
-        _upsertTranscript(
+        _updateOrInsertTranscriptEntry(
           role: VoiceTranscriptRole.assistant,
           text: _liveTranscript,
           isFinal: false,
@@ -189,7 +191,7 @@ class HomeViewModel extends SafeChangeNotifier {
       case 'assistant.text.final':
         final text = (event.text ?? _liveTranscript).trim();
         if (text.isNotEmpty) unawaited(_saveVoiceMessage(text, isUser: false));
-        _upsertTranscript(
+        _updateOrInsertTranscriptEntry(
           role: VoiceTranscriptRole.assistant,
           text: text,
           isFinal: true,
@@ -201,7 +203,7 @@ class HomeViewModel extends SafeChangeNotifier {
       case 'user.text.delta':
         _voiceStatus = VoiceSessionStatus.listening;
         _micState = MicState.listening;
-        _upsertTranscript(
+        _updateOrInsertTranscriptEntry(
           role: VoiceTranscriptRole.user,
           text: event.text ?? '',
           isFinal: false,
@@ -211,7 +213,7 @@ class HomeViewModel extends SafeChangeNotifier {
       case 'user.text.final':
         final text = (event.text ?? '').trim();
         if (text.isNotEmpty) unawaited(_saveVoiceMessage(text, isUser: true));
-        _upsertTranscript(
+        _updateOrInsertTranscriptEntry(
           role: VoiceTranscriptRole.user,
           text: text,
           isFinal: true,
@@ -238,7 +240,7 @@ class HomeViewModel extends SafeChangeNotifier {
       case 'session.ended':
         if (_liveTranscript.trim().isNotEmpty) {
           unawaited(_saveVoiceMessage(_liveTranscript.trim(), isUser: false));
-          _upsertTranscript(
+          _updateOrInsertTranscriptEntry(
             role: VoiceTranscriptRole.assistant,
             text: _liveTranscript.trim(),
             isFinal: true,
@@ -250,7 +252,7 @@ class HomeViewModel extends SafeChangeNotifier {
     }
   }
 
-  void _upsertTranscript({
+  void _updateOrInsertTranscriptEntry({
     required VoiceTranscriptRole role,
     required String text,
     required bool isFinal,

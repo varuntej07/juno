@@ -29,6 +29,7 @@ import '../presentation/viewmodels/connectors_viewmodel.dart';
 import '../presentation/viewmodels/dietary_profile_viewmodel.dart';
 import '../presentation/viewmodels/home_viewmodel.dart';
 import '../presentation/viewmodels/nutrition_scan_viewmodel.dart';
+import '../presentation/viewmodels/reminders_viewmodel.dart';
 import '../presentation/viewmodels/settings_viewmodel.dart';
 import '../presentation/viewmodels/subscription_viewmodel.dart';
 
@@ -153,6 +154,9 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     ),
     ChangeNotifierProvider<SubscriptionViewModel>(
       create: (_) => SubscriptionViewModel(subscriptionService: subscriptionService),
+    ),
+    ChangeNotifierProvider<RemindersViewModel>(
+      create: (_) => RemindersViewModel(repository: reminderRepository),
     ),
   ];
 }

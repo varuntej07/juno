@@ -44,13 +44,6 @@ class SettingsViewModel extends SafeChangeNotifier {
     await _updateSettings(_user!.settings.copyWith(ttsEnabled: enabled));
   }
 
-  Future<void> setReminderLeadMinutes(int minutes) async {
-    if (_user == null) return;
-    await _updateSettings(
-      _user!.settings.copyWith(defaultReminderLeadMinutes: minutes),
-    );
-  }
-
   Future<void> _updateSettings(UserSettings newSettings) async {
     if (_user == null) return;
     _setState(ViewState.loading);

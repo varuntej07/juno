@@ -100,7 +100,7 @@ class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
                       onFeedback: vm.setFeedback,
                       onViewReminders: () => Navigator.push(
                         context,
-                        RemindersScreen.route(context),
+                        RemindersScreen.route(),
                       ),
                       onClarificationSubmit: vm.submitClarification,
                     ),

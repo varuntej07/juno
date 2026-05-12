@@ -97,7 +97,7 @@ class ChatBackupService {
       return false;
     }
 
-    if (await _localSessionCount() > 0) {
+    if (await _localSessionCountForUser(userId) > 0) {
       return false;
     }
 
@@ -124,6 +124,7 @@ class ChatBackupService {
         restoredSessions.add(
           ChatSessionsCompanion.insert(
             id: sessionDoc.id,
+            userId: Value(userId),
             startedAt: startedAt,
             updatedAt: Value(updatedAt),
             title: Value(data['title'] as String?),
@@ -155,7 +156,7 @@ class ChatBackupService {
         }
       }
 
-      if (await _localSessionCount() > 0) {
+      if (await _localSessionCountForUser(userId) > 0) {
         return false;
       }
 
@@ -341,9 +342,11 @@ class ChatBackupService {
     return (_db.select(_db.chatMessages)..where((t) => t.id.equals(messageId))).getSingleOrNull();
   }
 
-  Future<int> _localSessionCount() async {
+  Future<int> _localSessionCountForUser(String userId) async {
     final countExpression = _db.chatSessions.id.count();
-    final query = _db.selectOnly(_db.chatSessions)..addColumns([countExpression]);
+    final query = _db.selectOnly(_db.chatSessions)
+      ..addColumns([countExpression])
+      ..where(_db.chatSessions.userId.equals(userId));
     final row = await query.getSingle();
     return row.read(countExpression) ?? 0;
   }

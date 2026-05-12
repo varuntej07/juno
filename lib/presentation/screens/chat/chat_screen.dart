@@ -141,7 +141,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           onFeedback: vm.setFeedback,
                           onViewReminders: () => Navigator.push(
                             context,
-                            RemindersScreen.route(context),
+                            RemindersScreen.route(),
                           ),
                           onClarificationSubmit: vm.submitClarification,
                         ),

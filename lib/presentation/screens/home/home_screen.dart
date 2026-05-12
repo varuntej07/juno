@@ -793,7 +793,8 @@ class _SessionListState extends State<_SessionList> {
 
   Future<void> _load() async {
     final repo = context.read<ChatRepository>();
-    final result = await repo.loadMainSessions(limit: 25);
+    final uid = context.read<AuthViewModel>().user?.uid ?? '';
+    final result = await repo.loadMainSessions(userId: uid, limit: 25);
     result.when(
       success: (s) => setState(() {
         _sessions = s;

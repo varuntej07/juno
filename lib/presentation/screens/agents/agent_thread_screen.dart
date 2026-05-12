@@ -230,7 +230,7 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
                           onFeedback: vm.setFeedback,
                           onViewReminders: () => Navigator.push(
                             context,
-                            RemindersScreen.route(context),
+                            RemindersScreen.route(),
                           ),
                           onClarificationSubmit: vm.submitClarification,
                         ),
