@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/text_chat_viewmodel.dart';
-import '../../viewmodels/view_state.dart';
 import '../../widgets/chat_message_list.dart';
 import '../../widgets/error_display.dart';
 import '../../widgets/message_input.dart';
@@ -17,8 +16,9 @@ class EmbeddedChatPanel extends StatefulWidget {
 }
 
 class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   final _scrollController = ScrollController();
+  double _keyboardHeight = 0;
 
   @override
   bool get wantKeepAlive => true;
@@ -26,6 +26,7 @@ class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final uid = context.read<AuthViewModel>().user?.uid;
       await context.read<TextChatViewModel>().init(uid);
@@ -35,8 +36,19 @@ class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final newHeight = view.viewInsets.bottom / view.devicePixelRatio;
+    final wasOpen = _keyboardHeight > 100;
+    _keyboardHeight = newHeight;
+    final isOpen = newHeight > 100;
+    if (wasOpen != isOpen) setState(() {});
   }
 
   void _jumpToBottom() {
@@ -102,8 +114,6 @@ class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
                   onDismiss: vm.clearError,
                 ),
               ),
-            // Floating nav bar spacer: full height when keyboard is hidden,
-            // zero when keyboard is open (Scaffold already shrinks the body).
             MessageInput(
               isLoading: vm.state == ViewState.loading,
               hint: 'Ask Buddy anything...',
@@ -113,10 +123,12 @@ class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
               },
               onStop: vm.stopGeneration,
             ),
-            SizedBox(
-              height: MediaQuery.viewInsetsOf(context).bottom > 0
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              height: _keyboardHeight > 100
                   ? 0
-                  : MediaQuery.viewPaddingOf(context).bottom + 96,
+                  : MediaQuery.viewPaddingOf(context).bottom + 99,
             ),
           ],
         );

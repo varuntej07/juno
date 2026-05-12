@@ -18,6 +18,7 @@ import '../../presentation/screens/auth/login_screen.dart';
 import '../../presentation/screens/chat/chat_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/nutrition/nutrition_scan_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/reminders/reminders_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/subscription/paywall_screen.dart';
@@ -35,31 +36,55 @@ GoRouter buildRouter(AuthViewModel authViewModel) {
       final isReady =
           auth.state != ViewState.idle && auth.state != ViewState.loading;
       final isLoggedIn = auth.isAuthenticated;
+      final needsOnboarding = auth.needsOnboarding;
       final location = state.matchedLocation;
 
       AppLogger.info(
-        'Router redirect: location=$location authState=${auth.state} isReady=$isReady isLoggedIn=$isLoggedIn',
+        'Router redirect: location=$location authState=${auth.state} '
+        'isReady=$isReady isLoggedIn=$isLoggedIn needsOnboarding=$needsOnboarding',
         tag: 'Router',
       );
 
       if (!isReady) return null;
 
       final isOnLogin = location == '/login';
+      final isOnOnboarding = location == '/onboarding';
 
+      // If not authenticated, redirect to login.
       if (!isLoggedIn && !isOnLogin) {
         AppLogger.info('Router: -> /login (not authenticated)', tag: 'Router');
         return '/login';
       }
+
+      // Authenticated and left login - route to onboarding or home.
       if (isLoggedIn && isOnLogin) {
-        AppLogger.info('Router: -> /home (authenticated, leaving login)', tag: 'Router');
+        final dest = needsOnboarding ? '/onboarding' : '/home';
+        AppLogger.info('Router: -> $dest (authenticated, leaving login)', tag: 'Router');
+        return dest;
+      }
+
+      // Authenticated but hasn't completed onboarding, enforce the flow.
+      if (isLoggedIn && needsOnboarding && !isOnOnboarding) {
+        AppLogger.info('Router: -> /onboarding (onboarding incomplete)', tag: 'Router');
+        return '/onboarding';
+      }
+
+      // If onboarding is complete, then /onboarding is no longer valid.
+      if (isLoggedIn && !needsOnboarding && isOnOnboarding) {
+        AppLogger.info('Router: -> /home (onboarding already complete)', tag: 'Router');
         return '/home';
       }
+
       return null;
     },
     routes: [
       GoRoute(
         path: '/login',
         builder: (_, __) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (_, __) => const OnboardingScreen(),
       ),
 
       // Shell: Home + Agents tabs — bottom nav persists across both

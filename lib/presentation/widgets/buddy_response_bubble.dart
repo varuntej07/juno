@@ -386,7 +386,7 @@ class _BuddyResponseBubbleState extends State<BuddyResponseBubble> {
       ),
       blockquotePadding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
       listBullet: const TextStyle(color: AppColors.textSecondary),
-      a: const TextStyle(
+      a: TextStyle(
         color: AppColors.accentLight,
         decoration: TextDecoration.underline,
       ),

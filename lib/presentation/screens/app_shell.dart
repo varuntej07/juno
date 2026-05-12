@@ -45,8 +45,8 @@ class _FloatingGlassNavBar extends StatelessWidget {
 
   static const _items = [
     (
-      icon: Icons.mic_none_rounded,
-      activeIcon: Icons.mic_rounded,
+      icon: Icons.home_outlined,
+      activeIcon: Icons.home_rounded,
       label: 'Home'
     ),
     (

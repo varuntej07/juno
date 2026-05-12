@@ -115,34 +115,54 @@ async def _run(user_id: str) -> None:
 
     planner, verifier, pills_agent = _get_agents()
 
-    # Step 5: Plan
-    plan = await planner.generate(context)
-
-    # Step 6: Verify
-    result = await verifier.verify(plan, topics_sent_yesterday, dietary_profile)
-
     retry_count = 0
     rejection_feedback: str | None = None
 
-    # Step 7: One retry if rejected
-    if not result.approved:
-        rejection_feedback = result.feedback_for_planner
-        logger.info("daily_notification: plan rejected, retrying once", {
-            "user_id": user_id,
-            "rejection_reason": result.rejection_reason,
-            "feedback": result.feedback_for_planner,
-        })
-        context["retry_feedback"] = result.feedback_for_planner
-        retry_count = 1
+    # Steps 5–6: Generate first plan and verify.
+    # The planner can raise (truncated JSON from token ceiling, timeout, parse failure).
+    # Treat any exception as a failed plan so the retry and safe_default paths still fire but a missed notification is never acceptable.
+    plan = None
+    result = None
+    try:
         plan = await planner.generate(context)
         result = await verifier.verify(plan, topics_sent_yesterday, dietary_profile)
-
-    # Step 8: Safe default if still rejected
-    if not result.approved:
-        logger.warn("daily_notification: retry also rejected, using safe default", {
+    except Exception as exc:
+        logger.warn("daily_notification: planner raised on first attempt", {
             "user_id": user_id,
-            "rejection_reason": result.rejection_reason,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
         })
+
+    # Step 7: One retry if the plan was rejected or the planner failed to produce one.
+    if plan is None or (result is not None and not result.approved):
+        if result is not None and not result.approved:
+            rejection_feedback = result.feedback_for_planner
+            logger.info("daily_notification: plan rejected, retrying once", {
+                "user_id": user_id,
+                "rejection_reason": result.rejection_reason,
+                "feedback": result.feedback_for_planner,
+            })
+            context["retry_feedback"] = result.feedback_for_planner
+        retry_count = 1
+        plan = None
+        result = None
+        try:
+            plan = await planner.generate(context)
+            result = await verifier.verify(plan, topics_sent_yesterday, dietary_profile)
+        except Exception as exc:
+            logger.warn("daily_notification: planner raised on retry", {
+                "user_id": user_id,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            })
+
+    # Step 8: Safe default if both attempts failed or were rejected.
+    if plan is None or (result is not None and not result.approved):
+        if result is not None and not result.approved:
+            logger.warn("daily_notification: retry also rejected, using safe default", {
+                "user_id": user_id,
+                "rejection_reason": result.rejection_reason,
+            })
         plan = _make_safe_default_plan(news_items, user_timezone)
 
     # Step 9: Write daily_plans/{today}

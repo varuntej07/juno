@@ -54,6 +54,9 @@ class UserModel {
   final DateTime createdAt;
   final DateTime lastActiveAt;
   final String? timezone;
+  final bool onboardingComplete;
+  final bool? auraConsentGranted;
+  final String? dateOfBirth;
 
   const UserModel({
     required this.uid,
@@ -64,6 +67,9 @@ class UserModel {
     required this.createdAt,
     required this.lastActiveAt,
     this.timezone,
+    this.onboardingComplete = true,
+    this.auraConsentGranted,
+    this.dateOfBirth,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -78,6 +84,9 @@ class UserModel {
       createdAt: DateTime.parse(json['created_at'] as String),
       lastActiveAt: DateTime.parse(json['last_active_at'] as String),
       timezone: json['timezone'] as String?,
+      onboardingComplete: json['onboarding_complete'] as bool? ?? true, // Existing users without this field are treated as onboarded.
+      auraConsentGranted: json['aura_consent_granted'] as bool?,
+      dateOfBirth: json['date_of_birth'] as String?,
     );
   }
 
@@ -90,6 +99,9 @@ class UserModel {
         'created_at': createdAt.toUtc().toIso8601String(),
         'last_active_at': lastActiveAt.toUtc().toIso8601String(),
         'timezone': timezone,
+        'onboarding_complete': onboardingComplete,
+        'aura_consent_granted': auraConsentGranted,
+        'date_of_birth': dateOfBirth,
       };
 
   UserModel copyWith({
@@ -99,6 +111,9 @@ class UserModel {
     UserSettings? settings,
     DateTime? lastActiveAt,
     String? timezone,
+    bool? onboardingComplete,
+    bool? auraConsentGranted,
+    String? dateOfBirth,
   }) {
     return UserModel(
       uid: uid,
@@ -109,6 +124,9 @@ class UserModel {
       createdAt: createdAt,
       lastActiveAt: lastActiveAt ?? this.lastActiveAt,
       timezone: timezone ?? this.timezone,
+      onboardingComplete: onboardingComplete ?? this.onboardingComplete,
+      auraConsentGranted: auraConsentGranted ?? this.auraConsentGranted,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
     );
   }
 }

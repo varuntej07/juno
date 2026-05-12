@@ -490,7 +490,7 @@ class _CtaButton extends StatelessWidget {
         child: Container(
           height: 54,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               colors: [AppColors.accent, AppColors.accentDark],
             ),
             borderRadius: BorderRadius.circular(16),

@@ -222,12 +222,12 @@ class ModelProvider:
             config = types.GenerateContentConfig(
                 system_instruction=system,
                 temperature=temperature,
-                max_output_tokens=2048,
+                max_output_tokens=4096,
             )
         else:
             config = types.GenerateContentConfig(
                 temperature=temperature,
-                max_output_tokens=2048,
+                max_output_tokens=4096,
             )
 
         contents.append(prompt)

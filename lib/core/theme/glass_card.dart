@@ -186,7 +186,7 @@ class AmbientBackground extends StatelessWidget {
             child: Container(
               width: 360,
               height: 360,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [AppColors.glassOrb1, Colors.transparent],
@@ -202,7 +202,7 @@ class AmbientBackground extends StatelessWidget {
             child: Container(
               width: 300,
               height: 300,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [AppColors.glassOrb2, Colors.transparent],

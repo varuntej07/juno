@@ -39,20 +39,16 @@ class _AgentsScreenState extends State<AgentsScreen> {
       case 'nutrition':
         final profileVm = context.read<DietaryProfileViewModel>();
         if (!profileVm.nutritionAgentEnabled) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => const DietaryOnboardingScreen()),
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(builder: (_) => const DietaryOnboardingScreen()),
           );
         } else {
-          Navigator.push(
-            context,
+          Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(builder: (_) => const NutritionScanScreen()),
           );
         }
       case 'calendar':
-        Navigator.push(
-          context,
+        Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(builder: (_) => const ConnectorsScreen()),
         );
     }

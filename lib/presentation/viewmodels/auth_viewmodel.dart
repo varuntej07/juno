@@ -30,6 +30,7 @@ class AuthViewModel extends SafeChangeNotifier {
   UserModel? get user => _user;
   AppException? get error => _error;
   bool get isAuthenticated => _user != null;
+  bool get needsOnboarding => _user != null && !_user!.onboardingComplete;
 
   void _setState(ViewState s) {
     _state = s;
@@ -122,6 +123,18 @@ class AuthViewModel extends SafeChangeNotifier {
       _error = AppException.unexpected(e.toString());
       _setState(ViewState.error);
     }
+  }
+
+  /// Called after `OnboardingRepository.saveOnboardingResult` succeeds.
+  /// Updates the in-memory user so the router redirect fires immediately
+  /// without waiting for the Firestore stream to re-emit.
+  void markOnboardingComplete({required bool auraConsentGranted}) {
+    if (_user == null) return;
+    _user = _user!.copyWith(
+      onboardingComplete: true,
+      auraConsentGranted: auraConsentGranted,
+    );
+    safeNotifyListeners();
   }
 
   Future<void> signOut() async {

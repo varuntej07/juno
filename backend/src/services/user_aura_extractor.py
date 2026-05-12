@@ -414,6 +414,26 @@ async def _update_user_aura_style_signals(
     })
 
 
+async def _user_has_granted_aura_consent(uid: str) -> bool:
+    """Read aura_consent_granted from users/{uid}. Returns False on any error (safe default)."""
+    from .firebase import admin_firestore
+
+    def _fetch() -> bool:
+        snap = admin_firestore().collection("users").document(uid).get()
+        if not snap.exists:
+            return False
+        return (snap.to_dict() or {}).get("aura_consent_granted", False) is True
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        logger.warn("UserAuraExtractor: consent check failed, skipping extraction", {
+            "user_id": uid,
+            "error": str(exc),
+        })
+        return False
+
+
 async def extract_and_update_user_aura(
     uid: str,
     message: str,
@@ -424,6 +444,7 @@ async def extract_and_update_user_aura(
     Public entry point. Called via asyncio.create_task from the chat handler.
 
     Flow:
+      0. Consent check — skip entirely if the user has not granted Aura consent.
       1. Read UserAura/{uid} -- retrieves prev_user_query and current profile.
       2. Build extraction prompt with current message + prev_user_query + prev_buddy_response.
       3. Gemini Flash extracts a MessageInsight including profile signals and turn scoring.
@@ -432,6 +453,11 @@ async def extract_and_update_user_aura(
 
     All exceptions are caught and logged. This function never raises.
     """
+    # Step 0: GDPR consent gate. Skip silently if the user has not opted in.
+    # The check reads users/{uid}.aura_consent_granted which is written during onboarding.
+    if not await _user_has_granted_aura_consent(uid):
+        return
+
     insight: MessageInsight | None = None
     try:
         profile = await _read_user_aura_profile(uid)

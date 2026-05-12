@@ -10,6 +10,7 @@ import '../data/repositories/agent_suggestion_pills_repository.dart';
 import '../data/repositories/auth_repository.dart';
 import '../data/repositories/chat_repository.dart';
 import '../data/repositories/memory_repository.dart';
+import '../data/repositories/onboarding_repository.dart';
 import '../data/repositories/reminder_repository.dart';
 import '../data/services/chat_backup_service.dart';
 import '../data/services/chat_session_manager.dart';
@@ -84,6 +85,9 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
   final agentSuggestionPillsRepository = AgentSuggestionPillsRepository(
     firestoreService: firestoreService,
   );
+  final onboardingRepository = OnboardingRepository(
+    firestoreService: firestoreService,
+  );
 
   return [
     // Infrastructure
@@ -115,6 +119,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
     Provider<MemoryRepository>.value(value: memoryRepository),
     Provider<ReminderRepository>.value(value: reminderRepository),
     Provider<AgentSuggestionPillsRepository>.value(value: agentSuggestionPillsRepository),
+    Provider<OnboardingRepository>.value(value: onboardingRepository),
 
     // ViewModels
     ChangeNotifierProvider<AuthViewModel>(

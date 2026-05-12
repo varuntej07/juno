@@ -34,6 +34,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late final AnimationController _rippleController;
   late final Animation<double> _rippleAnimation;
   late final PageController _pageController;
+  late final TextChatViewModel _textChatViewModel;
+  bool _textChatViewModelCreated = false;
   _HomeMode _mode = _HomeMode.voice;
 
   @override
@@ -86,10 +88,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_textChatViewModelCreated) {
+      _textChatViewModel = TextChatViewModel(
+        backendService: context.read<BackendApiService>(),
+        chatRepository: context.read<ChatRepository>(),
+        chatBackupService: context.read<ChatBackupService>(),
+        feedbackService: context.read<FeedbackService>(),
+        connectivityService: context.read<ConnectivityService>(),
+        chatSessionManager: context.read<ChatSessionManager>(),
+      );
+      _textChatViewModelCreated = true;
+    }
+  }
+
+  @override
   void dispose() {
     _breathController.dispose();
     _rippleController.dispose();
     _pageController.dispose();
+    _textChatViewModel.dispose();
     super.dispose();
   }
 
@@ -133,6 +152,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: false,
       drawer: _ChatDrawer(
         onNewChat: () {
           Navigator.of(context).pop();
@@ -188,15 +208,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     rippleAnimation: _rippleAnimation,
                     onMicTap: _handleMicTap,
                   ),
-                  ChangeNotifierProvider(
-                    create: (context) => TextChatViewModel(
-                      backendService: context.read<BackendApiService>(),
-                      chatRepository: context.read<ChatRepository>(),
-                      chatBackupService: context.read<ChatBackupService>(),
-                      feedbackService: context.read<FeedbackService>(),
-                      connectivityService: context.read<ConnectivityService>(),
-                      chatSessionManager: context.read<ChatSessionManager>(),
-                    ),
+                  ChangeNotifierProvider.value(
+                    value: _textChatViewModel,
                     child: const EmbeddedChatPanel(),
                   ),
                 ],

@@ -92,6 +92,7 @@ class AuthRepository {
       createdAt: now,
       lastActiveAt: now,
       timezone: timezone,
+      onboardingComplete: false,
     );
 
     AppLogger.info(

@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
   AppTheme._();
 
   static ThemeData get dark {
+    final bodyTextTheme = GoogleFonts.plusJakartaSansTextTheme(
+      ThemeData(brightness: Brightness.dark).textTheme,
+    );
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      colorScheme: const ColorScheme.dark(
+      colorScheme: ColorScheme.dark(
         surface: AppColors.background,
         primary: AppColors.accent,
         secondary: AppColors.accentLight,
@@ -18,48 +23,50 @@ class AppTheme {
         outline: AppColors.border,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      fontFamily: 'Inter',
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(
+      textTheme: bodyTextTheme.copyWith(
+        // Display sizes use Outfit.
+        displayLarge: GoogleFonts.outfit(
           color: AppColors.textPrimary,
           fontSize: 32,
           fontWeight: FontWeight.w700,
           letterSpacing: -0.5,
         ),
-        displayMedium: TextStyle(
+        displayMedium: GoogleFonts.outfit(
           color: AppColors.textPrimary,
           fontSize: 24,
           fontWeight: FontWeight.w600,
           letterSpacing: -0.3,
         ),
-        titleLarge: TextStyle(
+        titleLarge: GoogleFonts.outfit(
           color: AppColors.textPrimary,
           fontSize: 20,
           fontWeight: FontWeight.w600,
+          letterSpacing: -0.2,
         ),
-        titleMedium: TextStyle(
+        titleMedium: GoogleFonts.outfit(
           color: AppColors.textPrimary,
           fontSize: 16,
           fontWeight: FontWeight.w500,
         ),
-        bodyLarge: TextStyle(
+        // Body sizes use Plus Jakarta Sans
+        bodyLarge: GoogleFonts.plusJakartaSans(
           color: AppColors.textPrimary,
           fontSize: 16,
           fontWeight: FontWeight.w400,
-          height: 1.5,
+          height: 1.55,
         ),
-        bodyMedium: TextStyle(
+        bodyMedium: GoogleFonts.plusJakartaSans(
           color: AppColors.textSecondary,
           fontSize: 14,
           fontWeight: FontWeight.w400,
-          height: 1.5,
+          height: 1.55,
         ),
-        bodySmall: TextStyle(
+        bodySmall: GoogleFonts.plusJakartaSans(
           color: AppColors.textTertiary,
           fontSize: 12,
           fontWeight: FontWeight.w400,
         ),
-        labelLarge: TextStyle(
+        labelLarge: GoogleFonts.plusJakartaSans(
           color: AppColors.textPrimary,
           fontSize: 14,
           fontWeight: FontWeight.w500,
@@ -70,12 +77,12 @@ class AppTheme {
         color: AppColors.textSecondary,
         size: 24,
       ),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: AppColors.background,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: TextStyle(
+        titleTextStyle: GoogleFonts.outfit(
           color: AppColors.textPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -89,12 +96,12 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.accent,
-          foregroundColor: AppColors.textPrimary,
+          foregroundColor: AppColors.background,
           minimumSize: const Size(double.infinity, 52),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: const TextStyle(
+          textStyle: GoogleFonts.plusJakartaSans(
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -103,7 +110,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.accent,
-          textStyle: const TextStyle(
+          textStyle: GoogleFonts.plusJakartaSans(
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -132,7 +139,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+          borderSide: BorderSide(color: AppColors.accent, width: 1.5),
         ),
         hintStyle: const TextStyle(color: AppColors.textTertiary),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -147,10 +154,34 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.surface,
-        contentTextStyle: const TextStyle(color: AppColors.textPrimary),
+        contentTextStyle: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
+}
+
+// Geist Mono styles for timestamps, data values, and labels.
+// Can use these directly in widgets by passing style: AppTextStyles.mono
+class AppTextStyles {
+  AppTextStyles._();
+
+  static TextStyle get mono => GoogleFonts.geistMono(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        color: AppColors.textTertiary,
+      );
+
+  static TextStyle get monoAccent => GoogleFonts.geistMono(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: AppColors.accent,
+      );
+
+  static TextStyle get monoLarge => GoogleFonts.geistMono(
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        color: AppColors.textSecondary,
+      );
 }
