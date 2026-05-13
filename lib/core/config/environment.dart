@@ -1,5 +1,3 @@
-import 'dev_targets.dart';
-
 enum Env { dev, staging, prod }
 
 class EnvironmentConfig {

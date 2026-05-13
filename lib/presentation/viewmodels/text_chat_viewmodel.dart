@@ -1,4 +1,3 @@
-import '../../data/services/chat_session_manager.dart';
 import 'chat_viewmodel.dart';
 
 /// ViewModel for the main Buddy text-chat screen opened from the drawer.

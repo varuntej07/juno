@@ -127,6 +127,7 @@ List<SingleChildWidget> buildProviders(SharedPreferences prefs) {
       create: (_) => AuthViewModel(
         authRepository: authRepository,
         notificationService: notificationService,
+        backendApiService: backendApiService,
       ),
     ),
     ChangeNotifierProvider<HomeViewModel>(

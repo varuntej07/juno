@@ -52,8 +52,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void _openConsentScreen() {
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (_, animation, __) => const AuraConsentScreen(),
-        transitionsBuilder: (_, animation, __, child) => SlideTransition(
+        pageBuilder: (_, animation, _) => const AuraConsentScreen(),
+        transitionsBuilder: (_, animation, _, child) => SlideTransition(
           position: Tween(
             begin: const Offset(1.0, 0.0),
             end: Offset.zero,

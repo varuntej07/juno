@@ -324,7 +324,7 @@ class _VoicePanel extends StatelessWidget {
     final bottomReserve = MediaQuery.of(context).viewPadding.bottom + 110;
 
     return Consumer<HomeViewModel>(
-      builder: (_, vm, __) {
+      builder: (_, vm, _) {
         return Stack(
           children: [
             Positioned.fill(
@@ -403,7 +403,7 @@ class _VoiceButton extends StatelessWidget {
         children: [
           AnimatedBuilder(
             animation: Listenable.merge([breathAnimation, rippleAnimation]),
-            builder: (_, __) {
+            builder: (_, _) {
               final isActive = micState != MicState.idle;
               final scale = isActive ? 1.0 : breathAnimation.value;
               return Transform.scale(
@@ -550,7 +550,7 @@ class _VoiceStatusCardState extends State<_VoiceStatusCard> {
                     shrinkWrap: true,
                     padding: const EdgeInsets.symmetric(vertical: 22),
                     itemCount: entries.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 14),
+                    separatorBuilder: (_, _) => const SizedBox(height: 14),
                     itemBuilder: (_, index) {
                       return _VoiceTranscriptLine(entry: entries[index]);
                     },
@@ -610,7 +610,7 @@ class _ChatDrawer extends StatelessWidget {
       backgroundColor: AppColors.deepBackground,
       child: SafeArea(
         child: Consumer<AuthViewModel>(
-          builder: (_, authVm, __) {
+          builder: (_, authVm, _) {
             final isLoggedIn = authVm.user != null;
 
             return Column(
@@ -650,7 +650,7 @@ class _ChatDrawer extends StatelessWidget {
                               ),
                               if ((authVm.user?.email ?? '').isNotEmpty)
                                 Text(
-                                  authVm.user!.email!,
+                                  authVm.user?.email ?? '',
                                   style: const TextStyle(
                                       color: AppColors.textTertiary,
                                       fontSize: 12),

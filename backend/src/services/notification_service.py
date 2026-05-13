@@ -178,9 +178,23 @@ async def send_notification(
     })
 
     # 4. Send via FCM
-    batch_response: messaging.BatchResponse = await asyncio.to_thread(
-        admin_messaging().send_each_for_multicast, message
-    )
+    try:
+        batch_response: messaging.BatchResponse = await asyncio.to_thread(
+            admin_messaging().send_each_for_multicast, message
+        )
+    except Exception as exc:
+        logger.error("send_notification: FCM send failed", {
+            "user_id": user_id,
+            "notification_type": notification_type,
+            "token_count": len(token_strings),
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        })
+        return NotificationResult(
+            tokens_targeted=len(token_strings),
+            success_count=0,
+            failure_count=len(token_strings),
+        )
 
     # 5. Collect invalid tokens from FCM response
     invalid: list[str] = []

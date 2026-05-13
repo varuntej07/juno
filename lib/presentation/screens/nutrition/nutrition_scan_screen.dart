@@ -443,7 +443,7 @@ class _LoadingViewState extends State<_LoadingView>
           children: [
             AnimatedBuilder(
               animation: _pulse,
-              builder: (_, __) => Transform.scale(
+              builder: (_, _) => Transform.scale(
                 scale: _scale.value,
                 child: Container(
                   width: 80,
@@ -1296,7 +1296,7 @@ class _KeyNutrientsRow extends StatelessWidget {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: nutrients.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (_, i) => _NutrientCard(
               nutrient: nutrients[i],
               accentColor: _colorFor(nutrients[i].sentiment),

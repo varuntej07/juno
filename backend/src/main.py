@@ -47,6 +47,7 @@ from .handlers.engagement import (
     handle_engagement_orchestrate,
     handle_engagement_responded,
 )
+from .handlers.account import handle_delete_account
 from .handlers.scheduled_agents import handle_agents_tick, handle_agent_run
 from .handlers.notification_reply import handle_notification_reply_request
 from .handlers.nutrition import handle_nutrition_analyze_request, handle_nutrition_scan_request
@@ -159,6 +160,11 @@ def _handler_response(result: dict) -> JSONResponse:
     except (json.JSONDecodeError, TypeError):
         body_dict = {"raw": body_str}
     return JSONResponse(content=body_dict, status_code=result.get("statusCode", 500))
+
+
+@app.delete("/account")
+async def account_delete_endpoint(request: Request) -> JSONResponse:
+    return await handle_delete_account(request)
 
 
 @app.post("/devices/register")

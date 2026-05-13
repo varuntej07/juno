@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -397,13 +398,35 @@ class _ConsentStep extends StatelessWidget {
 
           const SizedBox(height: 14),
           Center(
-            child: Text(
-              'Your data is never sold. GDPR compliant.',
-              style: const TextStyle(
-                color: AppColors.textTertiary,
-                fontSize: 11,
-              ),
-              textAlign: TextAlign.center,
+            child: Column(
+              children: [
+                const Text(
+                  'Your data is never sold. GDPR compliant.',
+                  style: TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 11,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _LegalLink(
+                      label: 'Privacy Policy',
+                      url: 'https://varuntej.dev/aura/privacy-policy',
+                    ),
+                    const Text(
+                      ' · ',
+                      style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+                    ),
+                    _LegalLink(
+                      label: 'Terms of Service',
+                      url: 'https://varuntej.dev/aura/terms-of-service',
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -534,6 +557,30 @@ class _StepIndicator extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+// Legal link
+class _LegalLink extends StatelessWidget {
+  final String label;
+  final String url;
+
+  const _LegalLink({required this.label, required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.textTertiary,
+          fontSize: 11,
+          decoration: TextDecoration.underline,
+          decorationColor: AppColors.textTertiary,
+        ),
+      ),
     );
   }
 }

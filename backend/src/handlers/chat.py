@@ -100,6 +100,19 @@ def _error_stream(message: str) -> AsyncGenerator[str, None]:
     return _gen()
 
 
+def _chat_limit_reached_stream() -> AsyncGenerator[str, None]:
+    _payload = json.dumps({
+        "type": "chat_limit_reached",
+        "message": "You've reached the daily message limit. Please upgrade to keep chatting.",
+    })
+
+    async def _gen():
+        yield f"data: {_payload}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return _gen()
+
+
 def _sse_error_response(
     message: str,
     *,
@@ -295,6 +308,23 @@ async def handle_chat_stream(event: dict[str, Any]) -> StreamingResponse:
             headers=_sse_headers,
         )
 
+    # effective_tier is always resolved so it can be passed to the
+    # Claude client for tool-level gating regardless of environment.
+    effective_tier = "pro"
+    if settings.is_production:
+        from ..services.entitlement import get_user_effective_tier, check_and_increment_daily_chat_usage
+        effective_tier = await get_user_effective_tier(user_id)
+        if effective_tier == "free":
+            allowed, _ = await check_and_increment_daily_chat_usage(user_id)
+            if not allowed:
+                logger.info("Chat: free-tier daily limit reached", {"user_id": user_id})
+                return StreamingResponse(
+                    _chat_limit_reached_stream(),
+                    media_type="text/event-stream",
+                    status_code=200,
+                    headers=_sse_headers,
+                )
+
     message = str(body.get("message", "")).strip()
     if not message:
         logger.warn("Chat: rejected — empty message", {"user_id": user_id})
@@ -378,6 +408,7 @@ async def handle_chat_stream(event: dict[str, Any]) -> StreamingResponse:
                 user_text=message,
                 history=history,
                 is_agent=bool(agent_id),
+                user_tier=effective_tier,
             ):
                 yield f"data: {json.dumps(sse_event)}\n\n"
             duration_ms = int((time.monotonic() - start_ts) * 1000)
@@ -399,7 +430,8 @@ async def handle_chat_stream(event: dict[str, Any]) -> StreamingResponse:
                     "error_type": type(exc).__name__,
                 },
             )
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
+            _err = json.dumps({"type": "error", "message": "Internal server error"})
+            yield f"data: {_err}\n\n"
         finally:
             yield "data: [DONE]\n\n"
 

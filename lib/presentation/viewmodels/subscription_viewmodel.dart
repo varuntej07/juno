@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../../core/base/safe_change_notifier.dart';
@@ -24,7 +23,7 @@ class SubscriptionViewModel extends SafeChangeNotifier {
     _subscriptionService.addListener(_onServiceChanged);
   }
 
-  // ── Getters ────────────────────────────────────────────────────────────────
+  // Getters
 
   SubscriptionTier get currentTier => _subscriptionService.currentTier;
   bool get isTrialActive => _subscriptionService.isTrialActive;
@@ -41,7 +40,7 @@ class SubscriptionViewModel extends SafeChangeNotifier {
   bool get isOnProPlan => currentTier == SubscriptionTier.pro;
   bool get isOnFreePlan => currentTier == SubscriptionTier.free && !isTrialActive;
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  // Actions
 
   Future<void> purchaseStarter({bool annual = false}) async {
     final productId = annual
@@ -82,7 +81,7 @@ class SubscriptionViewModel extends SafeChangeNotifier {
     safeNotifyListeners();
   }
 
-  // ── Private ────────────────────────────────────────────────────────────────
+  // Private 
 
   Future<void> _purchaseById(String productId) async {
     final product = products.where((p) => p.id == productId).firstOrNull;

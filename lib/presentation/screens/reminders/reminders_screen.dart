@@ -9,8 +9,8 @@ import '../../viewmodels/reminders_viewmodel.dart';
 /// Full-page reminders list, accessible from Settings → Reminders.
 ///
 /// Status semantics:
-///   pending / snoozed / fired → "Upcoming"  (user has not acknowledged yet)
-///   dismissed                 → "Completed" (user explicitly tapped to mark done)
+///   pending / snoozed / fired -> "Upcoming"  (user has not acknowledged yet)
+///   dismissed -> "Completed" (user explicitly tapped to mark done)
 ///
 /// Tapping an upcoming reminder marks it dismissed (with a 340 ms animation).
 /// Tapping a completed reminder reverts it to active (instant undo).
@@ -30,7 +30,7 @@ class RemindersScreen extends StatelessWidget {
   }
 }
 
-// ── View ──────────────────────────────────────────────────────────────────────
+// View    
 
 class _RemindersView extends StatefulWidget {
   const _RemindersView();
@@ -114,7 +114,7 @@ class _RemindersViewState extends State<_RemindersView> {
                   onDismiss: vm.clearError,
                 ),
 
-              // ── Active reminders ──────────────────────────────────────────
+              // Active reminders 
               if (active.isNotEmpty) ...[
                 const _SectionHeader('Upcoming'),
                 ...active.map(
@@ -128,7 +128,7 @@ class _RemindersViewState extends State<_RemindersView> {
                 ),
               ],
 
-              // ── Completed reminders ───────────────────────────────────────
+              // Completed reminders 
               if (completed.isNotEmpty) ...[
                 const _SectionHeader('Completed'),
                 ...completed.map(
@@ -142,7 +142,7 @@ class _RemindersViewState extends State<_RemindersView> {
                 ),
               ],
 
-              // ── Load-more indicator ───────────────────────────────────────
+              // Load-more indicator 
               if (vm.isLoadingMore)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
@@ -163,7 +163,7 @@ class _RemindersViewState extends State<_RemindersView> {
   }
 }
 
-// ── Section header ────────────────────────────────────────────────────────────
+// Section header 
 
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -187,7 +187,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Reminder tile ─────────────────────────────────────────────────────────────
+// Reminder tile 
 
 class _ReminderTile extends StatefulWidget {
   final ReminderModel reminder;
@@ -218,7 +218,7 @@ class _ReminderTileState extends State<_ReminderTile> {
 
   bool get _showAsCompleted => widget.isCompleted || _completing;
 
-  // ── Tap handlers ────────────────────────────────────────────────────────────
+  // Tap handlers 
 
   Future<void> _handleComplete() async {
     if (_completing || widget.onComplete == null) return;
@@ -229,7 +229,7 @@ class _ReminderTileState extends State<_ReminderTile> {
 
   void _handleUndo() => widget.onUndo?.call();
 
-  // ── Formatting ───────────────────────────────────────────────────────────────
+  // Formatting 
 
   String _formatTime(DateTime dt) {
     final local = dt.toLocal();
@@ -266,8 +266,6 @@ class _ReminderTileState extends State<_ReminderTile> {
         return AppColors.accent;
     }
   }
-
-  // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -367,7 +365,7 @@ class _ReminderTileState extends State<_ReminderTile> {
   }
 }
 
-// ── Completion circle ─────────────────────────────────────────────────────────
+// Completion circle 
 
 class _CompletionCircle extends StatelessWidget {
   final bool isCompleted;
@@ -396,7 +394,7 @@ class _CompletionCircle extends StatelessWidget {
   }
 }
 
-// ── Notified badge ────────────────────────────────────────────────────────────
+// Notified badge 
 
 /// Shown on fired reminders in the Upcoming section — the notification
 /// was delivered but the user has not tapped to acknowledge yet.
@@ -426,7 +424,7 @@ class _NotifiedBadge extends StatelessWidget {
   }
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+// Empty state 
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
@@ -465,7 +463,7 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-// ── Error banner ──────────────────────────────────────────────────────────────
+// Error banner 
 
 class _ErrorBanner extends StatelessWidget {
   final String message;

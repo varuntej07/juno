@@ -25,8 +25,6 @@ import '../../presentation/screens/subscription/paywall_screen.dart';
 import '../../presentation/viewmodels/agent_viewmodel.dart';
 import '../../presentation/viewmodels/auth_viewmodel.dart';
 import '../../presentation/viewmodels/text_chat_viewmodel.dart';
-import '../../presentation/viewmodels/view_state.dart';
-
 GoRouter buildRouter(AuthViewModel authViewModel) {
   return GoRouter(
     initialLocation: '/home',
@@ -80,11 +78,11 @@ GoRouter buildRouter(AuthViewModel authViewModel) {
     routes: [
       GoRoute(
         path: '/login',
-        builder: (_, __) => const LoginScreen(),
+        builder: (_, _) => const LoginScreen(),
       ),
       GoRoute(
         path: '/onboarding',
-        builder: (_, __) => const OnboardingScreen(),
+        builder: (_, _) => const OnboardingScreen(),
       ),
 
       // Shell: Home + Agents tabs — bottom nav persists across both
@@ -93,11 +91,11 @@ GoRouter buildRouter(AuthViewModel authViewModel) {
         routes: [
           GoRoute(
             path: '/home',
-            builder: (_, __) => const HomeScreen(),
+            builder: (_, _) => const HomeScreen(),
           ),
           GoRoute(
             path: '/agents',
-            builder: (_, __) => const AgentsScreen(),
+            builder: (_, _) => const AgentsScreen(),
           ),
         ],
       ),

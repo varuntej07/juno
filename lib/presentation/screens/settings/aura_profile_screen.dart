@@ -1,0 +1,514 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/glass_card.dart';
+import '../../viewmodels/auth_viewmodel.dart';
+
+class AuraProfileScreen extends StatelessWidget {
+  const AuraProfileScreen({super.key});
+
+  static Route<void> route() => MaterialPageRoute(
+        builder: (_) => const AuraProfileScreen(),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = context.read<AuthViewModel>().user?.uid;
+    if (uid == null) {
+      return const _ErrorBody(message: 'Sign in to view your Aura profile.');
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: AmbientBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                child: Row(
+                  children: [
+                    GlassIconButton(
+                      icon: Icons.arrow_back_ios_new,
+                      onTap: () => Navigator.pop(context),
+                      iconSize: 17,
+                    ),
+                    const SizedBox(width: 14),
+                    const Text(
+                      'Your Aura',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('UserAura')
+                      .doc(uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.accent,
+                          strokeWidth: 2,
+                        ),
+                      );
+                    }
+
+                    final data = snapshot.data?.data() as Map<String, dynamic>?;
+                    if (data == null || data.isEmpty) {
+                      return const _EmptyAuraProfile();
+                    }
+
+                    return _AuraProfileBody(profile: data);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Profile body — renders each non-empty section
+
+class _AuraProfileBody extends StatelessWidget {
+  final Map<String, dynamic> profile;
+
+  const _AuraProfileBody({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+      children: [
+        _ExplicitFactsSection(facts: _strings(profile['explicit_facts'])),
+        _GoalsSection(goals: _strings(profile['inferred_goals'])),
+        _InterestsSection(interests: _interestMap(profile['deep_interest_frequencies'])),
+        _ToneSection(
+          tone: profile['dominant_tone'] as String?,
+          depthPref: profile['response_depth_preference'] as String?,
+        ),
+        _DietarySection(patterns: _strings(profile['dietary_patterns'])),
+        _StyleSection(
+          prefer: _strings(profile['response_style_prefer']),
+          avoid: _strings(profile['response_style_avoid']),
+        ),
+        const SizedBox(height: 16),
+        const _ProfileFootnote(),
+      ],
+    );
+  }
+
+  static List<String> _strings(dynamic value) {
+    if (value is List) return value.whereType<String>().toList();
+    return [];
+  }
+
+  static Map<String, int> _interestMap(dynamic value) {
+    if (value is Map) {
+      return value.map((k, v) => MapEntry(k.toString(), (v as num).toInt()));
+    }
+    return {};
+  }
+}
+
+// Section: explicit facts (things you've told Buddy directly)
+
+class _ExplicitFactsSection extends StatelessWidget {
+  final List<String> facts;
+  const _ExplicitFactsSection({required this.facts});
+
+  @override
+  Widget build(BuildContext context) {
+    if (facts.isEmpty) return const SizedBox.shrink();
+    return _ProfileSection(
+      icon: Icons.person_outline_rounded,
+      label: 'What you\'ve shared',
+      child: Column(
+        children: facts
+            .map((f) => _BulletRow(text: f))
+            .toList(),
+      ),
+    );
+  }
+}
+
+// Section: inferred goals
+
+class _GoalsSection extends StatelessWidget {
+  final List<String> goals;
+  const _GoalsSection({required this.goals});
+
+  @override
+  Widget build(BuildContext context) {
+    if (goals.isEmpty) return const SizedBox.shrink();
+    return _ProfileSection(
+      icon: Icons.flag_outlined,
+      label: 'Goals Buddy has noticed',
+      child: Column(
+        children: goals.map((g) => _BulletRow(text: g)).toList(),
+      ),
+    );
+  }
+}
+
+// Section: top interests ranked by frequency
+
+class _InterestsSection extends StatelessWidget {
+  final Map<String, int> interests;
+  const _InterestsSection({required this.interests});
+
+  @override
+  Widget build(BuildContext context) {
+    if (interests.isEmpty) return const SizedBox.shrink();
+
+    final sorted = interests.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top = sorted.take(6).toList();
+
+    return _ProfileSection(
+      icon: Icons.interests_outlined,
+      label: 'Topics you care about',
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: top
+            .map((e) => _InterestChip(label: e.key, count: e.value))
+            .toList(),
+      ),
+    );
+  }
+}
+
+// Section: tone and depth preference
+
+class _ToneSection extends StatelessWidget {
+  final String? tone;
+  final String? depthPref;
+
+  const _ToneSection({required this.tone, required this.depthPref});
+
+  static const _toneLabels = {
+    'casual': 'Casual',
+    'terse': 'Brief and direct',
+    'verbose': 'Detailed',
+    'formal': 'Formal',
+    'playful': 'Playful',
+  };
+
+  static const _depthLabels = {
+    'wants_brief': 'Prefers short answers',
+    'wants_detailed': 'Prefers thorough explanations',
+    'wants_step_by_step': 'Prefers step-by-step breakdowns',
+    'wants_examples': 'Learns better with examples',
+    'wants_opinion': 'Wants direct recommendations',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final toneLabel = _toneLabels[tone];
+    final depthLabel = _depthLabels[depthPref];
+    if (toneLabel == null && depthLabel == null) return const SizedBox.shrink();
+
+    return _ProfileSection(
+      icon: Icons.tune_outlined,
+      label: 'How you like to be spoken to',
+      child: Column(
+        children: [
+          if (toneLabel != null) _BulletRow(text: 'Tone: $toneLabel'),
+          if (depthLabel != null) _BulletRow(text: depthLabel),
+        ],
+      ),
+    );
+  }
+}
+
+// Section: dietary patterns
+
+class _DietarySection extends StatelessWidget {
+  final List<String> patterns;
+  const _DietarySection({required this.patterns});
+
+  @override
+  Widget build(BuildContext context) {
+    if (patterns.isEmpty) return const SizedBox.shrink();
+    return _ProfileSection(
+      icon: Icons.restaurant_outlined,
+      label: 'Dietary patterns',
+      child: Column(
+        children: patterns.map((p) => _BulletRow(text: p)).toList(),
+      ),
+    );
+  }
+}
+
+// Section: style prefer/avoid derived from feedback signals
+
+class _StyleSection extends StatelessWidget {
+  final List<String> prefer;
+  final List<String> avoid;
+
+  const _StyleSection({required this.prefer, required this.avoid});
+
+  @override
+  Widget build(BuildContext context) {
+    if (prefer.isEmpty && avoid.isEmpty) return const SizedBox.shrink();
+    return _ProfileSection(
+      icon: Icons.psychology_outlined,
+      label: 'Response style signals',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (prefer.isNotEmpty) ...[
+            _SubLabel('Buddy should'),
+            ...prefer.map((p) => _BulletRow(text: p, color: AppColors.accent)),
+          ],
+          if (avoid.isNotEmpty) ...[
+            if (prefer.isNotEmpty) const SizedBox(height: 8),
+            _SubLabel('Buddy should avoid'),
+            ...avoid.map((a) => _BulletRow(text: a, color: AppColors.textTertiary)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// Shared section container
+
+class _ProfileSection extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Widget child;
+
+  const _ProfileSection({
+    required this.icon,
+    required this.label,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: FauxGlassCard(
+        borderRadius: 16,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 15, color: AppColors.accent),
+                const SizedBox(width: 8),
+                Text(
+                  label.toUpperCase(),
+                  style: const TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BulletRow extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _BulletRow({required this.text, this.color = AppColors.textPrimary});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Container(
+              width: 4,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.6),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: color, fontSize: 14, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubLabel extends StatelessWidget {
+  final String text;
+  const _SubLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _InterestChip extends StatelessWidget {
+  final String label;
+  final int count;
+
+  const _InterestChip({required this.label, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return FauxGlassCard(
+      borderRadius: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                color: AppColors.accent,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Empty state — shown when no profile has been built yet
+
+class _EmptyAuraProfile extends StatelessWidget {
+  const _EmptyAuraProfile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.auto_awesome_outlined,
+              size: 32,
+              color: AppColors.accent,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Aura is still learning',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Chat with Buddy for a while and your Aura profile will start filling in — your interests, goals, tone, and everything Buddy learns about you.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.6,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileFootnote extends StatelessWidget {
+  const _ProfileFootnote();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      'This profile is built silently from your conversations. It is never sold or shared. You can disable it anytime in Settings.',
+      style: TextStyle(
+        color: AppColors.textTertiary,
+        fontSize: 11,
+        height: 1.6,
+      ),
+      textAlign: TextAlign.center,
+    );
+  }
+}
+
+class _ErrorBody extends StatelessWidget {
+  final String message;
+  const _ErrorBody({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.deepBackground,
+      body: Center(
+        child: Text(message,
+            style: const TextStyle(color: AppColors.textSecondary)),
+      ),
+    );
+  }
+}

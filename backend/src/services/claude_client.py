@@ -34,6 +34,14 @@ _RETRYABLE_ERRORS = (
 EXCLUDED_TOOLS_FOR_GENERAL_CHAT = {"get_user_context", "web_search"}
 EXCLUDED_TOOLS_FOR_AGENT_CHAT = {"get_user_context"}
 
+# Tools that require Starter tier or above.
+# Free users only get reminder + memory + clarification tools.
+STARTER_ONLY_TOOLS: frozenset[str] = frozenset({
+    "create_calendar_event",
+    "get_upcoming_events",
+    "analyze_nutrition",
+})
+
 # Text Claude generates before a tool call is typically a brief narration sentence.
 # Anything longer than this is almost certainly the start of a final response, not narration.
 _NARRATION_MAX_CHARS = 80
@@ -55,6 +63,7 @@ class ClaudeClient:
         user_text: str,
         history: list[dict[str, Any]] | None = None,
         is_agent: bool = False,
+        user_tier: str = "pro",
     ) -> dict[str, Any]:
         """
         Run a full multi-turn Claude conversation until a text response
@@ -72,6 +81,8 @@ class ClaudeClient:
         """
         excluded = EXCLUDED_TOOLS_FOR_AGENT_CHAT if is_agent else EXCLUDED_TOOLS_FOR_GENERAL_CHAT
         tools = [t for t in claude_tool_definitions() if t["name"] not in excluded]
+        if user_tier == "free":
+            tools = [t for t in tools if t["name"] not in STARTER_ONLY_TOOLS]
 
         # Build message list: prior history + current user turn
         prior: list[dict[str, Any]] = history or []
@@ -228,6 +239,7 @@ class ClaudeClient:
         user_text: str,
         history: list[dict[str, Any]] | None = None,
         is_agent: bool = False,
+        user_tier: str = "pro",
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Streaming version of send_text_turn. Yields SSE-compatible event dicts:
@@ -240,6 +252,8 @@ class ClaudeClient:
         """
         excluded = EXCLUDED_TOOLS_FOR_AGENT_CHAT if is_agent else EXCLUDED_TOOLS_FOR_GENERAL_CHAT
         tools = [t for t in claude_tool_definitions() if t["name"] not in excluded]
+        if user_tier == "free":
+            tools = [t for t in tools if t["name"] not in STARTER_ONLY_TOOLS]
         prior: list[dict[str, Any]] = history or []
         messages: list[dict[str, Any]] = [*prior, {"role": "user", "content": user_text}]
         tool_names_used: list[str] = []

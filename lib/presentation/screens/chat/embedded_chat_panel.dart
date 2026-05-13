@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/glass_card.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/text_chat_viewmodel.dart';
 import '../../widgets/chat_message_list.dart';
@@ -84,11 +87,30 @@ class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
               .addPostFrameCallback((_) => _scrollToBottom());
         }
 
+        if (vm.chatLimitReached) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            vm.clearChatLimitReached();
+            context.push('/paywall');
+          });
+        }
+
+        final authVm = context.read<AuthViewModel>();
+        final showFirstSession =
+            authVm.justCompletedOnboarding && vm.messages.isEmpty && !vm.isStreaming;
+
         return Column(
           children: [
             Expanded(
               child: vm.messages.isEmpty && !vm.isStreaming
-                  ? const EmptyChatPlaceholder(agentName: 'Buddy')
+                  ? showFirstSession
+                      ? _FirstSessionPrompt(
+                          onSuggestionTap: (text) {
+                            authVm.consumeFirstSessionPrompt();
+                            vm.sendMessage(text, _uid);
+                            _scrollToBottom();
+                          },
+                        )
+                      : const EmptyChatPlaceholder(agentName: 'Buddy')
                   : ChatMessageList(
                       messages: vm.messages,
                       scrollController: _scrollController,
@@ -133,6 +155,100 @@ class _EmbeddedChatPanelState extends State<EmbeddedChatPanel>
           ],
         );
       },
+    );
+  }
+}
+
+// First-session prompt — shown once immediately after onboarding.
+// Tap a suggestion to seed the conversation (and the Aura profile) right away.
+
+class _FirstSessionPrompt extends StatelessWidget {
+  final ValueChanged<String> onSuggestionTap;
+
+  static const _suggestions = [
+    "Tell Buddy about me, my goals, routine, and what's on my mind",
+    "I want Buddy to check in on me daily and remind me of my goals",
+    "Help me stay on top of my habits and send me morning briefings",
+    "I just moved to a new city and need a thinking partner",
+  ];
+
+  const _FirstSessionPrompt({required this.onSuggestionTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              size: 28,
+              color: AppColors.accent,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Hey, I\'m Buddy.',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Tell me about yourself so I can actually remember you.\nOr pick a starter below.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.6,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 28),
+          ..._suggestions.map(
+            (suggestion) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: GestureDetector(
+                onTap: () => onSuggestionTap(suggestion),
+                child: FauxGlassCard(
+                  borderRadius: 14,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          suggestion,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 12,
+                        color: AppColors.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

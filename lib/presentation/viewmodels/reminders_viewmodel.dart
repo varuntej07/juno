@@ -28,7 +28,7 @@ class RemindersViewModel extends SafeChangeNotifier {
   /// Whether more pages exist in Firestore.
   bool get hasMore => _repository.hasMore;
 
-  // ── Derived lists ───────────────────────────────────────────────────────────
+  /// Derived lists
 
   /// Pending / snoozed / fired reminders sorted soonest-first.
   List<ReminderModel> get activeReminders => _activeReminders;
@@ -38,7 +38,7 @@ class RemindersViewModel extends SafeChangeNotifier {
 
   void _rebuildDerivedLists() {
     _activeReminders = _reminders.where((r) => r.status.isActive).toList()
-      ..sort((a, b) => a.triggerAt.compareTo(b.triggerAt));
+      ..sort((a, b) => b.triggerAt.compareTo(a.triggerAt));
     _completedReminders = _reminders.where((r) => r.status.isCompleted).toList()
       ..sort((a, b) => b.triggerAt.compareTo(a.triggerAt));
   }

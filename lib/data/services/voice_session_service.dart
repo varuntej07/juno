@@ -49,7 +49,7 @@ class VoiceSessionService {
       final lkUrl = tokenResult['url'] as String;
       final roomName = tokenResult['room'] as String;
 
-      _room = Room();
+      _room = Room(roomOptions: const RoomOptions());
       _listener = _room!.createListener();
 
       _listener!
@@ -117,7 +117,6 @@ class VoiceSessionService {
         lkUrl,
         lkToken,
         connectOptions: const ConnectOptions(autoSubscribe: true),
-        roomOptions: const RoomOptions(),
       );
 
       await _room!.localParticipant?.setMicrophoneEnabled(true);

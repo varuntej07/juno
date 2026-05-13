@@ -47,6 +47,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   String? _currentSessionId;
   String? _currentUserId;
   bool _sessionTitleSet = false;
+  bool _chatLimitReached = false;
 
   ChatViewModel({
     required BackendApiService backendService,
@@ -68,7 +69,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     _primeConnectivityState();
   }
 
-  // ── Getters ────────────────────────────────────────────────────────────────
+  // Getters
 
   ViewState get state => _state;
   AppException? get error => _error;
@@ -80,6 +81,15 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   String? get thinkingMessage => _thinkingMessage;
   String? get currentSessionId => _currentSessionId;
 
+  /// True when the backend reports the free-tier daily chat limit has been hit.
+  /// The UI should respond by routing to /paywall.
+  bool get chatLimitReached => _chatLimitReached;
+
+  void clearChatLimitReached() {
+    _chatLimitReached = false;
+    safeNotifyListeners();
+  }
+
   /// Null for main Buddy chat; the agent identifier string for agent threads.
   String? get agentId;
 
@@ -90,7 +100,7 @@ abstract class ChatViewModel extends SafeChangeNotifier {
   /// Exposed to subclasses for session bootstrapping.
   ChatRepository get chatRepository => _chatRepository;
 
-  // ── Init ───────────────────────────────────────────────────────────────────
+  // Init 
 
   /// Called by the screen once the userId is known. Subclasses control which
   /// session gets loaded via [initializeSession].
@@ -395,6 +405,13 @@ abstract class ChatViewModel extends SafeChangeNotifier {
             _setState(ViewState.loaded);
             ErrorHandler.logBreadcrumb('message_sent');
             unawaited(AnalyticsService.logMessageSent(agentId ?? 'general'));
+
+          case ChatLimitReachedEvent():
+            _isStreaming = false;
+            _streamingText = '';
+            _thinkingMessage = null;
+            _chatLimitReached = true;
+            _setState(_messages.isEmpty ? ViewState.idle : ViewState.loaded);
 
           case ErrorStreamEvent(:final message):
             _isStreaming = false;

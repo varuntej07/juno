@@ -29,14 +29,16 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final uid = context.read<AuthViewModel>().user?.uid;
-      await context.read<TextChatViewModel>().init(uid);
+      final chatVm = context.read<TextChatViewModel>();
+      final extra = GoRouterState.of(context).extra;
+      await chatVm.init(uid);
       _jumpToBottom();
 
       // Handle engagement pre-load passed as route extra
-      final extra = GoRouterState.of(context).extra;
+      if (!mounted) return;
       if (extra is Map<String, dynamic> &&
           extra.containsKey('engagementId')) {
-        await context.read<TextChatViewModel>().loadEngagementContext(
+        await chatVm.loadEngagementContext(
               engagementId: extra['engagementId'] as String,
               agentContext: extra['agentContext'] as String,
               initialMessage: extra['initialMessage'] as String,

@@ -2,7 +2,7 @@ import '../services/firestore_service.dart';
 
 /// Hardcoded fallback pills shown when Firestore hasn't been populated yet
 /// (before the first 7 AM scheduled run) or when the fetch fails.
-const Map<String, List<String>> _FALLBACK_SUGGESTION_PILLS_BY_AGENT_ID = {
+const Map<String, List<String>> _fallbackSuggestionPillsByAgentId = {
   'cricket': [
     'Today\'s matches',
     'IPL standings',
@@ -62,5 +62,5 @@ class AgentSuggestionPillsRepository {
   }
 
   List<String> _fallbackPillsForAgent(String agentId) =>
-      _FALLBACK_SUGGESTION_PILLS_BY_AGENT_ID[agentId] ?? [];
+      _fallbackSuggestionPillsByAgentId[agentId] ?? [];
 }

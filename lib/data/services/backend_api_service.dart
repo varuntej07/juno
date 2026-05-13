@@ -44,6 +44,11 @@ class ErrorStreamEvent extends ChatStreamEvent {
   ErrorStreamEvent(this.message);
 }
 
+class ChatLimitReachedEvent extends ChatStreamEvent {
+  final String message;
+  ChatLimitReachedEvent(this.message);
+}
+
 /// Structured data returned by the backend when a set_reminder tool call succeeds.
 /// Used to render the inline ReminderCard in chat.
 class ReminderPayload {
@@ -169,9 +174,9 @@ class BackendApiService {
       {
         'message': message,
         'user_id': userId,
-        if (sessionId != null) 'session_id': sessionId,
+        'session_id': ?sessionId,
         if (history.isNotEmpty) 'history': history,
-        if (clientMessageId != null) 'client_message_id': clientMessageId,
+        'client_message_id': ?clientMessageId,
       },
       ChatResponse.fromJson,
       timeout: AppConstants.chatRequestTimeout,
@@ -203,10 +208,10 @@ class BackendApiService {
       await for (final line in _apiClient.streamPost('/chat', {
         'message': message,
         'user_id': userId,
-        if (sessionId != null) 'session_id': sessionId,
+        'session_id': ?sessionId,
         if (history.isNotEmpty) 'history': history,
-        if (clientMessageId != null) 'client_message_id': clientMessageId,
-        if (agentId != null) 'agent_id': agentId,
+        'client_message_id': ?clientMessageId,
+        'agent_id': ?agentId,
       })) {
         try {
           final json = jsonDecode(line) as Map<String, dynamic>;
@@ -256,6 +261,8 @@ class BackendApiService {
         );
       case 'error':
         return ErrorStreamEvent(json['message'] as String? ?? 'Unknown error');
+      case 'chat_limit_reached':
+        return ChatLimitReachedEvent(json['message'] as String? ?? '');
       default:
         return null;
     }
@@ -283,6 +290,15 @@ class BackendApiService {
         metadata: {'engagementId': engagementId, 'error': e.message},
       ),
     );
+  }
+
+  Future<Result<void>> deleteAccount() async {
+    if (_useStub || _apiClient == null) {
+      return Result.failure(
+        AppException(code: ErrorCode.unexpected, message: 'Not available in stub mode.'),
+      );
+    }
+    return _apiClient.delete('/account', (json) {});
   }
 
   Future<Result<Map<String, dynamic>>> analyzeNutrition(

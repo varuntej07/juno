@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/glass_card.dart';
 import 'aura_text_field.dart';
 
 /// Text input bar at the bottom of any chat screen.

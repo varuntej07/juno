@@ -6,6 +6,7 @@ import '../../core/errors/error_handler.dart';
 import '../../core/logging/app_logger.dart';
 import '../../data/models/user_model.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../data/services/backend_api_service.dart';
 import '../../data/services/notification_service.dart';
 import 'view_state.dart';
 
@@ -14,23 +15,36 @@ export 'view_state.dart';
 class AuthViewModel extends SafeChangeNotifier {
   final AuthRepository _authRepository;
   final NotificationService _notificationService;
+  final BackendApiService _backendApiService;
   StreamSubscription<UserModel?>? _authSubscription;
 
   AuthViewModel({
     required AuthRepository authRepository,
     required NotificationService notificationService,
+    required BackendApiService backendApiService,
   })  : _authRepository = authRepository,
-        _notificationService = notificationService;
+        _notificationService = notificationService,
+        _backendApiService = backendApiService;
 
   ViewState _state = ViewState.idle;
   UserModel? _user;
   AppException? _error;
+  bool _justCompletedOnboarding = false;
 
   ViewState get state => _state;
   UserModel? get user => _user;
   AppException? get error => _error;
   bool get isAuthenticated => _user != null;
   bool get needsOnboarding => _user != null && !_user!.onboardingComplete;
+
+  /// True immediately after onboarding completes. Used to show the guided
+  /// first-message prompt in the chat panel. Consumed once by the UI.
+  bool get justCompletedOnboarding => _justCompletedOnboarding;
+
+  void consumeFirstSessionPrompt() {
+    _justCompletedOnboarding = false;
+    safeNotifyListeners();
+  }
 
   void _setState(ViewState s) {
     _state = s;
@@ -134,6 +148,7 @@ class AuthViewModel extends SafeChangeNotifier {
       onboardingComplete: true,
       auraConsentGranted: auraConsentGranted,
     );
+    _justCompletedOnboarding = true;
     safeNotifyListeners();
   }
 
@@ -143,6 +158,28 @@ class AuthViewModel extends SafeChangeNotifier {
     ErrorHandler.logBreadcrumb('user_signed_out');
     _setState(ViewState.idle);
     unawaited(_authRepository.signOut());
+  }
+
+  /// Permanently deletes the account. Calls the backend to wipe all Firestore
+  /// data and the Firebase Auth user, then signs out locally.
+  /// Returns null on success, or an error message string on failure.
+  Future<String?> deleteAccount() async {
+    _setState(ViewState.loading);
+    final result = await _backendApiService.deleteAccount();
+    return result.when(
+      success: (_) {
+        _user = null;
+        _error = null;
+        _setState(ViewState.idle);
+        unawaited(_authRepository.signOut());
+        return null;
+      },
+      failure: (error) {
+        AppLogger.error('deleteAccount failed', error: error, tag: 'AuthVM');
+        _setState(ViewState.loaded);
+        return error.message;
+      },
+    );
   }
 
   void clearError() {
