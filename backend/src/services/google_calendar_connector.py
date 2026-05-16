@@ -37,6 +37,8 @@ def _utc_now() -> datetime:
 def _to_iso(value: datetime | None) -> str | None:
     if value is None:
         return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat()
 
 
@@ -119,13 +121,15 @@ class GoogleCalendarConnector:
         return doc.to_dict() or {}
 
     def _exchange_server_auth_code(self, auth_code: str) -> dict[str, Any]:
-        form = urllib.parse.urlencode({
+        form_fields: dict[str, str] = {
             "code": auth_code,
             "client_id": settings.GOOGLE_CLIENT_ID,
             "client_secret": settings.GOOGLE_CLIENT_SECRET,
-            "redirect_uri": settings.GOOGLE_REDIRECT_URI or "",
             "grant_type": "authorization_code",
-        }).encode("utf-8")
+        }
+        if settings.GOOGLE_REDIRECT_URI:
+            form_fields["redirect_uri"] = settings.GOOGLE_REDIRECT_URI
+        form = urllib.parse.urlencode(form_fields).encode("utf-8")
 
         request = urllib.request.Request(
             "https://oauth2.googleapis.com/token",
@@ -144,7 +148,7 @@ class GoogleCalendarConnector:
                 "status": exc.code,
                 "body": body[:300],
             })
-            raise ValueError("Failed to exchange Google server auth code.") from exc
+            raise ValueError(f"Google token exchange failed ({exc.code}): {body[:200]}") from exc
         except Exception as exc:
             logger.exception("Google OAuth code exchange failed", {
                 "user_id": self._user_id,
@@ -169,7 +173,7 @@ class GoogleCalendarConnector:
         )
         expiry = _parse_iso(data.get("expiry_at"))
         if expiry is not None:
-            creds.expiry = expiry
+            creds.expiry = expiry.replace(tzinfo=None)  # google-auth compares against datetime.utcnow() (naive)
         return creds
 
     def _persist_credentials(
