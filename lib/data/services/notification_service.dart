@@ -355,7 +355,7 @@ class NotificationService {
       }
     } else if (notificationType == 'agent_nudge') {
       final agentId = message.data['agent_id'] as String? ?? '';
-      final chatOpener = message.data['chat_opener'] as String? ?? '';
+      final chatOpener = message.data['opening_chat_message'] as String? ?? '';
 
       if (agentId.isNotEmpty) {
         _agentNudgeTapController.add(AgentNudgeTapPayload(

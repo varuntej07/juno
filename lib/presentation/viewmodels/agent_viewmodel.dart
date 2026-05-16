@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../core/logging/app_logger.dart';
+import '../../data/models/chat_message_model.dart';
 import '../../data/repositories/agent_suggestion_pills_repository.dart';
 import 'chat_viewmodel.dart';
 
@@ -13,6 +14,7 @@ class AgentViewModel extends ChatViewModel {
   final AgentSuggestionPillsRepository _suggestionPillsRepository;
 
   List<String> _suggestionPills = const [];
+  String? _pendingNudgeOpener;
 
   AgentViewModel({
     required String agentId,
@@ -31,10 +33,33 @@ class AgentViewModel extends ChatViewModel {
 
   List<String> get suggestionPills => _suggestionPills;
 
+  /// Initializes the session. If [nudgeOpener] is provided and the session
+  /// has no persisted messages, it is shown as the first assistant bubble.
+  @override
+  Future<void> init(String? userId, {String? nudgeOpener}) async {
+    _pendingNudgeOpener = nudgeOpener;
+    await super.init(userId);
+  }
+
   @override
   Future<void> initializeSession() async {
     await super.initializeSession();
     unawaited(_fetchAndLoadSuggestionPills());
+    _maybeInjectNudgeOpener();
+  }
+
+  void _maybeInjectNudgeOpener() {
+    final opener = _pendingNudgeOpener;
+    if (opener == null || opener.isEmpty || messages.isNotEmpty) return;
+    _pendingNudgeOpener = null;
+    insertEphemeralMessage(ChatMessageModel(
+      id: 'nudge_${DateTime.now().microsecondsSinceEpoch}',
+      text: opener,
+      isUser: false,
+      timestamp: DateTime.now(),
+      channel: ChatMessageChannel.text,
+      sessionId: currentSessionId,
+    ));
   }
 
   Future<void> _fetchAndLoadSuggestionPills() async {

@@ -24,8 +24,8 @@ class AnalyticsService {
   }
 
   /// Logged when the user opens an agent thread screen.
-  /// [agentId] matches the string used in the backend (e.g. "cricket", "jobs").
-  /// [agentName] is the display name shown in the UI (e.g. "CricBolt").
+  /// [agentId] matches the string used in the backend (e.g. "sports", "jobs").
+  /// [agentName] is the display name shown in the UI
   static Future<void> logAgentSelected(
     String agentId,
     String agentName,

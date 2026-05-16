@@ -330,6 +330,17 @@ abstract class ChatViewModel extends SafeChangeNotifier {
     unawaited(_backendService.markEngagementResponded(engagementId));
   }
 
+  // Subclass hooks
+
+  /// Inserts [msg] at the front of the in-memory message list without
+  /// persisting to Drift. Used by AgentViewModel to surface a notification
+  /// nudge opener as the first visible bubble in a fresh thread.
+  void insertEphemeralMessage(ChatMessageModel msg) {
+    _messages.insert(0, msg);
+    _state = ViewState.loaded;
+    safeNotifyListeners();
+  }
+
   // Private helpers
 
   void _streamResponse(String text, ChatMessageModel userMsg) {

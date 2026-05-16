@@ -112,7 +112,7 @@ class _AgentThreadScreenState extends State<AgentThreadScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uid = context.read<AuthViewModel>().user?.uid;
-      context.read<AgentViewModel>().init(uid).then((_) {
+      context.read<AgentViewModel>().init(uid, nudgeOpener: widget.chatOpener).then((_) {
         _jumpToBottom();
         unawaited(AnalyticsService.logAgentSelected(widget.agentId, _agent.name));
       });

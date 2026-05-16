@@ -24,9 +24,12 @@ class Agent {
 /// All agents shown on the Agents grid, in display order.
 /// Nutrition and Calendar keep their existing custom screens.
 /// The four new agents open a per-agent chat thread.
+///
+/// Deep-link contract: each agent's [id] must match the `agent_id` string
+/// the backend sends in FCM data payloads for notification routing to work.
 const List<Agent> kAgents = [
   Agent(
-    id: 'cricket',
+    id: 'sports',
     name: 'CricBolt',
     subtitle: 'Live scores & digests',
     icon: Icons.sports_cricket_rounded,
