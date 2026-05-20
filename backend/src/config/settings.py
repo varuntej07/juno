@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_CHAT_MODEL: str = "claude-sonnet-4-6"
-    ANTHROPIC_MAX_TOKENS: int = 1024
+    ANTHROPIC_MAX_TOKENS: int = 8096
 
     # Google Calendar (optional)
     GOOGLE_CLIENT_ID: str = ""
