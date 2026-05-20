@@ -71,11 +71,11 @@ List<String> _messagesForContext(String? contextTag) =>
 /// Shown while a streaming SSE response is in progress.
 ///
 /// Behaviour:
-///   - Before first text arrives: rotates [_loadingMessages] every 2.5s with a
-///     fade. If [thinkingMessage] is non-null (tool status from backend), shows
-///     that instead of the rotating messages.
-///   - Once text starts streaming: renders [streamingText] with a blinking ▍
-///     cursor appended.
+///   - Before first text arrives: renders an inline thinking indicator —
+///     a pulsing dot + italic rotating label without container or background.
+///     If [thinkingMessage] is non-null (tool narration from backend), shows that instead of the rotating messages.
+///   - Once text starts streaming: renders [streamingText] inside a glass
+///     bubble with a blinking ▍ cursor appended.
 ///   - When [isLoading] becomes false the cursor stops blinking (stream done).
 class StreamingMessageBubble extends StatefulWidget {
   final String streamingText;
@@ -165,7 +165,57 @@ class _StreamingMessageBubbleState extends State<StreamingMessageBubble>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    return widget.streamingText.isEmpty
+        ? _buildThinkingIndicator(context, theme)
+        : _buildStreamingBubble(context, theme);
+  }
 
+  /// Matches the chain-of-thought style used by Claude.ai and Perplexity.
+  Widget _buildThinkingIndicator(BuildContext context, ThemeData theme) {
+    final messages = _messagesForContext(widget.contextTag);
+    final label = widget.thinkingMessage ?? messages[_loadingIndex % messages.length];
+
+    final textStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.65),
+      fontStyle: FontStyle.italic,
+    );
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _cursorController,
+              builder: (_, __) => Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: theme.colorScheme.primary.withValues(
+                    alpha: 0.35 + (_cursorController.value * 0.55),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            widget.thinkingMessage != null
+                ? Flexible(child: Text(label, style: textStyle))
+                : FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Text(label, style: textStyle),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Glass bubble — only rendered once text starts arriving.
+  Widget _buildStreamingBubble(BuildContext context, ThemeData theme) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -188,56 +238,8 @@ class _StreamingMessageBubbleState extends State<StreamingMessageBubble>
           ),
           border: Border.all(color: Color(0x1AFFFFFF), width: 1),
         ),
-        child: widget.streamingText.isEmpty
-            ? _buildLoadingLabel(theme)
-            : _buildStreamingText(theme),
+        child: _buildStreamingText(theme),
       ),
-    );
-  }
-
-  Widget _buildLoadingLabel(ThemeData theme) {
-    final messages = _messagesForContext(widget.contextTag);
-    final label = widget.thinkingMessage ?? messages[_loadingIndex % messages.length];
-    final isToolMessage = widget.thinkingMessage != null;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-          ),
-        ),
-        const SizedBox(width: 8),
-        if (isToolMessage)
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          )
-        else
-          Flexible(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-          ),
-      ],
     );
   }
 

@@ -81,7 +81,7 @@ async def handle_nutrition_scan_request(event: dict[str, Any]) -> dict[str, Any]
         _scan_cache[result.scan_id] = result
 
         items_label = ", ".join(result.detected_items) or "unknown item"
-        await log_query(user_id, "nutrition_scan", f"[scan] {items_label}")
+        asyncio.create_task(log_query(user_id, "nutrition_scan", f"[scan] {items_label}"))
 
         return _json(200, {
             "scan_id": result.scan_id,
@@ -132,9 +132,10 @@ async def handle_nutrition_analyze_request(event: dict[str, Any]) -> dict[str, A
     if not scan_result:
         return _json(404, {"error": "Scan session not found or expired. Please scan again."})
 
-    dietary_profile = await _get_dietary_profile(user_id)
-
-    await log_query(user_id, "nutrition_scan", f"[analyze] {scan_id}")
+    dietary_profile, _ = await asyncio.gather(
+        _get_dietary_profile(user_id),
+        log_query(user_id, "nutrition_scan", f"[analyze] {scan_id}"),
+    )
 
     try:
         client = get_gemini_client()

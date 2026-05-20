@@ -362,9 +362,12 @@ async def handle_chat_stream(event: dict[str, Any]) -> StreamingResponse:
         None,
     )
 
-    # Build system prompt: datetime + learned Aura behavioral hints + agent persona + default prompt
-    datetime_line = f"Current date and time: {await _get_user_local_datetime(user_id)}"
-    aura_profile, accepted_hints = await _fetch_cached_aura_data(user_id)
+    # Build system prompt: fetch datetime + aura profile concurrently, logging query off the critical path.
+    (local_datetime, (aura_profile, accepted_hints)) = await asyncio.gather(
+        _get_user_local_datetime(user_id),
+        _fetch_cached_aura_data(user_id),
+    )
+    datetime_line = f"Current date and time: {local_datetime}"
     aura_suffix = _build_injected_system_prompt_suffix(aura_profile, accepted_hints, user_id)
     agent_prompt = get_system_prompt(agent_id) if agent_id else None
     effective_system_prompt = (
@@ -375,12 +378,14 @@ async def handle_chat_stream(event: dict[str, Any]) -> StreamingResponse:
     if aura_suffix:
         effective_system_prompt += aura_suffix
 
-    await log_query(
-        user_id,
-        "chat",
-        message,
-        session_id=session_id,
-        client_message_id=client_message_id,
+    asyncio.create_task(
+        log_query(
+            user_id,
+            "chat",
+            message,
+            session_id=session_id,
+            client_message_id=client_message_id,
+        )
     )
     asyncio.create_task(
         extract_and_update_user_aura(user_id, message, session_id, prev_buddy_response)
